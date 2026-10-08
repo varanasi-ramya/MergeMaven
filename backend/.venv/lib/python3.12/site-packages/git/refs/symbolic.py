@@ -59,12 +59,14 @@ def _git_dir(repo: "Repo", path: Union[PathLike, None]) -> PathLike:
 
 
 class SymbolicReference:
-    """Special case of a reference that is symbolic.
+    """A reference that can point to another reference or be detached.
 
-    This does not point to a specific commit, but to another
-    :class:`~git.refs.head.Head`, which itself specifies a commit.
+    An attached :class:`~git.refs.head.HEAD` usually points to a
+    :class:`~git.refs.head.Head`, which itself specifies a commit. A detached
+    :class:`~git.refs.head.HEAD` points directly to a commit instead.
 
-    A typical example for a symbolic reference is :class:`~git.refs.head.HEAD`.
+    Use :attr:`commit` to access the commit in either case, and :attr:`reference`
+    to access the target reference when attached.
     """
 
     __slots__ = ("repo", "path")
@@ -74,6 +76,8 @@ class SymbolicReference:
     _common_path_default = ""
     _remote_common_path_default = "refs/remotes"
     _id_attribute_ = "name"
+    # Match Git's SYMREF_MAXDEPTH, counting the terminal reference as well.
+    _max_symref_depth = 5
 
     def __init__(self, repo: "Repo", path: PathLike, check_path: bool = False) -> None:
         self.repo = repo
@@ -189,13 +193,18 @@ class SymbolicReference:
 
         :param repo:
             The repository containing the reference at `ref_path`.
+
+        :raise ValueError:
+            If the reference is missing, invalid, or exceeds Git's limit of five
+            references in a symbolic reference chain (including the terminal ref).
         """
 
-        while True:
+        for _ in range(cls._max_symref_depth):
             hexsha, ref_path = cls._get_ref_info(repo, ref_path)
             if hexsha is not None:
                 return hexsha
         # END recursive dereferencing
+        raise ValueError("Too many levels of symbolic references at %r" % ref_path)
 
     @staticmethod
     def _check_ref_name_valid(ref_path: PathLike) -> None:
@@ -256,13 +265,13 @@ class SymbolicReference:
             * *sha* is of the file at rela_path points to if available, or ``None``.
             * *target_ref_path* is the reference we point to, or ``None``.
         """
-        if ref_path:
-            cls._check_ref_name_valid(ref_path)
+        if ref_path is None:
+            raise ValueError("Reference at %r does not exist" % ref_path)
+        ref_file = cls._get_validated_ref_path(repo, ref_path)
 
         tokens: Union[None, List[str], Tuple[str, str]] = None
-        repodir = _git_dir(repo, ref_path)
         try:
-            with open(os.path.join(repodir, ref_path), "rt", encoding="UTF-8") as fp:  # type: ignore[arg-type]
+            with open(ref_file, "rt", encoding="UTF-8") as fp:
                 value = fp.read().rstrip()
             # Don't only split on spaces, but on whitespace, which allows to parse lines like:
             # 60b64ef992065e2600bfef6187a97f92398a9144                branch 'master' of git-server:/path/to/repo
@@ -396,7 +405,23 @@ class SymbolicReference:
 
         :return:
             self
+
+        :raise ValueError:
+            If the symbolic reference chain exceeds Git's limit of five references.
         """
+        # Validate before recursing through the public method, preserving subclass
+        # dispatch and Reference's HEAD reflog updates.
+        ref_path: Union[PathLike, None] = self.path
+        for _ in range(self._max_symref_depth):
+            try:
+                hexsha, ref_path = self._get_ref_info(self.repo, ref_path)
+            except ValueError:
+                break  # Allow creating an unborn terminal reference.
+            if hexsha is not None:
+                break
+        else:
+            raise ValueError("Too many levels of symbolic references at %r" % ref_path)
+
         if isinstance(object, SymbolicReference):
             object = object.object  # @ReservedAssignment
         # END resolve references
@@ -416,7 +441,15 @@ class SymbolicReference:
 
     @property
     def commit(self) -> "Commit":
-        """Query or set commits directly"""
+        """The commit this reference resolves to, whether detached or symbolic.
+
+        For example, ``repo.head.commit.hexsha`` returns the current commit ID
+        both on a branch and with a detached HEAD. HEAD must resolve to an
+        existing commit; an unborn branch in an empty repository has none.
+
+        Assigning updates the commit without changing whether this reference
+        is detached.
+        """
         return self._get_commit()
 
     @commit.setter
@@ -443,7 +476,10 @@ class SymbolicReference:
         """
         sha, target_ref_path = self._get_ref_info(self.repo, self.path)
         if target_ref_path is None:
-            raise TypeError("%s is a detached symbolic reference as it points to %r" % (self, sha))
+            raise TypeError(
+                "%s is a detached symbolic reference as it points to %r. "
+                "Use .commit or .object to access the target directly." % (self, sha)
+            )
         return cast("Reference", self.from_path(self.repo, target_ref_path))
 
     def set_reference(
@@ -531,6 +567,18 @@ class SymbolicReference:
     # Aliased reference
     @property
     def reference(self) -> "Reference":
+        """The reference we point to, available only when not detached.
+
+        Check :attr:`is_detached` before reading this property if a target
+        reference is required. To access the target commit or object in either
+        state, use :attr:`commit` or :attr:`object` instead.
+
+        Assigning a reference keeps this reference symbolic. Assigning a git
+        object or revision string detaches it; reading this property then raises.
+
+        :raise TypeError:
+            If this reference is detached when reading the property.
+        """
         return self._get_reference()
 
     @reference.setter
@@ -559,11 +607,9 @@ class SymbolicReference:
             ``True`` if we are a detached reference, hence we point to a specific commit
             instead to another reference.
         """
-        try:
-            self.ref  # noqa: B018
-            return False
-        except TypeError:
-            return True
+        # Inspect only this ref. Constructing its target would recursively inspect
+        # symbolic references with nonstandard names through from_path().
+        return self._get_ref_info(self.repo, self.path)[1] is None
 
     def log(self) -> "RefLog":
         """

@@ -1817,6 +1817,12 @@ def text(text: str) -> TextClause:
 
         t = text(r"SELECT * FROM users WHERE name='\:username'")
 
+    .. note:: A name that is immediately followed by another colon,
+       such as ``:this:that`` or ``:value::int``, is currently not
+       interpreted as a bound parameter and is rendered as literal text;
+       whitespace may be used to separate the name from the colon, e.g.
+       ``:value ::int``.  This behavior may change in a future release.
+
     The :class:`_expression.TextClause`
     construct includes methods which can
     provide information about the bound parameters as well as the column
@@ -1909,6 +1915,26 @@ def tstring(template: Template) -> TString:
         # Apply explicit SQL types to bound values using literal()
         some_json = {"foo": "bar"}
         stmt = tstring(t"SELECT {literal(some_json, JSON)}")
+
+    **Literal SQL Text**:
+
+    The plain string portions of the template are rendered exactly as
+    given.  Unlike :func:`_expression.text`, they are not scanned for
+    bound parameter names in the ``:name`` format, and there are no escaping
+    rules such as ``\:`` for colons; a colon in the template, such as within
+    a quoted SQL string, is rendered unchanged.  A named bound parameter
+    whose value is passed at execution time may be embedded explicitly
+    using :func:`_expression.bindparam`::
+
+        from sqlalchemy import tstring, bindparam, Integer
+
+        user_id = bindparam("user_id", type_=Integer)
+        stmt = tstring(t"SELECT * FROM users WHERE id = {user_id}")
+        result = connection.execute(stmt, {"user_id": 42})
+
+    .. versionchanged:: 2.1.2 The plain string portions of a
+       :func:`_expression.tstring` are no longer scanned for bound parameter
+       names or ``\:`` escapes, as was the case in 2.1.0 and 2.1.1.
 
     **Column Specification**:
 

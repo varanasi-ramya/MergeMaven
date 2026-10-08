@@ -2,7 +2,6 @@
 # 3-Clause BSD License: https://opensource.org/license/bsd-3-clause/
 
 import os
-import sys
 from typing import (
     Any,
     Callable,
@@ -18,22 +17,13 @@ from typing import (
 )
 import warnings
 
-if sys.version_info >= (3, 8):
-    from typing import (
-        Literal,
-        Protocol,
-        SupportsIndex as SupportsIndex,
-        TypedDict,
-        runtime_checkable,
-    )
-else:
-    from typing_extensions import (
-        Literal,
-        Protocol,
-        SupportsIndex as SupportsIndex,
-        TypedDict,
-        runtime_checkable,
-    )
+from typing import (
+    Literal,
+    Protocol,
+    SupportsIndex as SupportsIndex,
+    TypedDict,
+    runtime_checkable,
+)
 
 if TYPE_CHECKING:
     from git.objects import Commit, Tree, TagObject, Blob
@@ -47,6 +37,22 @@ TBD = Any
 
 _T = TypeVar("_T")
 """Type variable used internally in GitPython."""
+
+_T_Stream_co = TypeVar("_T_Stream_co", str, bytes, covariant=True)
+_T_Stream_contra = TypeVar("_T_Stream_contra", str, bytes, contravariant=True)
+
+
+class SupportsRead(Protocol[_T_Stream_co]):
+    """A stream supporting reads, without requiring the full IO interface."""
+
+    def read(self, __size: int = -1) -> _T_Stream_co: ...
+
+
+class SupportsWrite(Protocol[_T_Stream_contra]):
+    """A stream supporting writes, including writers that return None."""
+
+    def write(self, __data: _T_Stream_contra) -> object: ...
+
 
 AnyGitObject = Union["Commit", "Tree", "TagObject", "Blob"]
 """Union of the :class:`~git.objects.base.Object`-based types that represent actual git

@@ -14,7 +14,7 @@ import re
 from git.cmd import Git, handle_process_output
 from git.compat import defenc, force_text
 from git.config import GitConfigParser, SectionConstraint, cp
-from git.exc import GitCommandError
+from git.exc import GitCommandError, UnsafeOptionError
 from git.refs import Head, Reference, RemoteReference, SymbolicReference, TagReference
 from git.util import (
     CallableRemoteProgress,
@@ -38,6 +38,7 @@ from typing import (
     Sequence,
     TYPE_CHECKING,
     Type,
+    TypeVar,
     Union,
     cast,
     overload,
@@ -49,6 +50,8 @@ if TYPE_CHECKING:
     from git.objects.commit import Commit
     from git.objects.submodule.base import UpdateProgress
     from git.repo.base import Repo
+
+_T_RemoteName = TypeVar("_T_RemoteName", bound=Union[str, "Remote"])
 
 flagKeyLiteral = Literal[" ", "!", "+", "-", "*", "=", "t", "?"]
 
@@ -629,7 +632,7 @@ class Remote(LazyMixin, IterableObj):
     def iter_items(cls, repo: "Repo", *args: Any, **kwargs: Any) -> Iterator["Remote"]:
         """:return: Iterator yielding :class:`Remote` objects of the given repository"""
         for section in repo.config_reader("repository").sections():
-            if not section.startswith("remote "):
+            if not section.lower().startswith("remote "):
                 continue
             lbound = section.find('"')
             rbound = section.rfind('"')
@@ -820,19 +823,20 @@ class Remote(LazyMixin, IterableObj):
         return cls.create(repo, name, url, **kwargs)
 
     @classmethod
-    def remove(cls, repo: "Repo", name: str) -> str:
+    def remove(cls, repo: "Repo", name: _T_RemoteName) -> _T_RemoteName:
         """Remove the remote with the given name.
 
         :return:
             The passed remote name to remove
         """
         repo.git.remote("rm", name)
-        if isinstance(name, cls):
-            name._clear_cache()
+        remote = name
+        if isinstance(remote, cls):
+            remote._clear_cache()
         return name
 
     @classmethod
-    def rm(cls, repo: "Repo", name: str) -> str:
+    def rm(cls, repo: "Repo", name: _T_RemoteName) -> _T_RemoteName:
         """Alias of remove.
         Remove the remote with the given name.
 
@@ -867,6 +871,9 @@ class Remote(LazyMixin, IterableObj):
         :return:
             self
         """
+        # Like pull, remote update forwards operands to fetch without `--`.
+        if self.name.startswith("-"):
+            raise UnsafeOptionError("Remote names used by update must not start with '-'.")
         scmd = "update"
         kwargs["insert_kwargs_after"] = scmd
         self.repo.git.remote(scmd, self.name, **kwargs)
@@ -901,7 +908,7 @@ class Remote(LazyMixin, IterableObj):
             kill_after_timeout=kill_after_timeout,
         )
 
-        stderr_text = progress.error_lines and "\n".join(progress.error_lines) or ""
+        stderr_text = "\n".join(progress.error_lines)
         proc.wait(stderr=stderr_text)
         if stderr_text:
             _logger.warning("Error lines received while fetching: %s", stderr_text)
@@ -973,7 +980,7 @@ class Remote(LazyMixin, IterableObj):
             decode_streams=False,
             kill_after_timeout=kill_after_timeout,
         )
-        stderr_text = progress.error_lines and "\n".join(progress.error_lines) or ""
+        stderr_text = "\n".join(progress.error_lines)
         try:
             proc.wait(stderr=stderr_text)
         except Exception as e:
@@ -1066,9 +1073,7 @@ class Remote(LazyMixin, IterableObj):
             args = [refspec]
 
         if not allow_unsafe_protocols:
-            for ref in args:
-                if ref:
-                    Git.check_unsafe_protocols(ref)
+            self.repo.git._check_unsafe_protocols_in_args([self, *args], kwargs)
 
         if not allow_unsafe_options:
             Git.check_unsafe_options(
@@ -1077,7 +1082,7 @@ class Remote(LazyMixin, IterableObj):
             )
 
         proc = self.repo.git.fetch(
-            "--", self, *args, as_process=True, with_stdout=False, universal_newlines=True, v=verbose, **kwargs
+            "--", self, *args, as_process=True, with_stdout=False, universal_newlines=True, v=bool(verbose), **kwargs
         )
         res = self._get_fetch_info_from_stderr(proc, progress, kill_after_timeout=kill_after_timeout)
         if hasattr(self.repo.odb, "update_cache"):
@@ -1097,7 +1102,8 @@ class Remote(LazyMixin, IterableObj):
         merge of branch with your local branch.
 
         :param refspec:
-            See :meth:`fetch` method.
+            See :meth:`fetch` method. Values starting with ``-`` are rejected,
+            even when ``allow_unsafe_options`` is enabled. Pass options as keywords.
 
         :param progress:
             See :meth:`push` method.
@@ -1123,9 +1129,14 @@ class Remote(LazyMixin, IterableObj):
         kwargs = add_progress(kwargs, self.repo.git, progress)
 
         refspec = Git._unpack_args(refspec or [])
+        # Git pull forwards these operands to fetch without preserving `--`.
+        # Reject every option-shaped operand, including with unsafe options enabled:
+        # opting into an explicit option must not turn a refspec into an option.
+        for operand in [self.name, *refspec]:
+            if operand.startswith("-"):
+                raise UnsafeOptionError("Remote names and pull refspecs must not start with '-'.")
         if not allow_unsafe_protocols:
-            for ref in refspec:
-                Git.check_unsafe_protocols(ref)
+            self.repo.git._check_unsafe_protocols_in_args([self, *refspec], kwargs)
 
         if not allow_unsafe_options:
             Git.check_unsafe_options(
@@ -1200,8 +1211,7 @@ class Remote(LazyMixin, IterableObj):
 
         refspec = Git._unpack_args(refspec or [])
         if not allow_unsafe_protocols:
-            for ref in refspec:
-                Git.check_unsafe_protocols(ref)
+            self.repo.git._check_unsafe_protocols_in_args([self, *refspec], kwargs)
 
         if not allow_unsafe_options:
             Git.check_unsafe_options(

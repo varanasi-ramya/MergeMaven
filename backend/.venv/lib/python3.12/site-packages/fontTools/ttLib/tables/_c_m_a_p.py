@@ -508,7 +508,7 @@ class cmap_format_2(CmapSubtable):
         # negative number to an unsigned short.
 
         if minGI > 1:
-            if minGI > 0x7FFF:
+            if minGI > 0x8000:
                 subHeader.idDelta = -(0x10000 - minGI) - 1
             else:
                 subHeader.idDelta = minGI - 1
@@ -516,7 +516,7 @@ class cmap_format_2(CmapSubtable):
             for i in range(subHeader.entryCount):
                 gid = subHeader.glyphIndexArray[i]
                 if gid > 0:
-                    subHeader.glyphIndexArray[i] = gid - idDelta
+                    subHeader.glyphIndexArray[i] = (gid - idDelta) & 0xFFFF
 
     def decompile(self, data, ttFont):
         # we usually get here indirectly from the subtable __getattr__ function, in which case both args must be None.
@@ -977,10 +977,13 @@ class cmap_format_4(CmapSubtable):
                 gids = []
                 for charCode in rangeCharCodes:
                     index = charCode + partial
-                    assert index < lenGIArray, (
-                        "In format 4 cmap, range (%d), the calculated index (%d) into the glyph index array is not less than the length of the array (%d) !"
-                        % (i, index, lenGIArray)
-                    )
+                    # a negative index would wrap around to the end of the array
+                    if not 0 <= index < lenGIArray:
+                        raise TTLibError(
+                            "cmap format 4 subtable: glyph index array offset %d "
+                            "out of range [0, %d) in segment %d"
+                            % (index, lenGIArray, i)
+                        )
                     if glyphIndexArray[index] != 0:  # if not missing glyph
                         glyphID = glyphIndexArray[index] + delta
                     else:

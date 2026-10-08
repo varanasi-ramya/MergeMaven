@@ -166,7 +166,7 @@ class Head(Reference):
         flag = "-d"
         if force:
             flag = "-D"
-        repo.git.branch(flag, *heads)
+        repo.git.branch(flag, "--", *heads)
 
     def set_tracking_branch(self, remote_reference: Union["RemoteReference", None]) -> "Head":
         """Configure this branch to track the given remote reference. This will
@@ -241,7 +241,7 @@ class Head(Reference):
         if force:
             flag = "-M"
 
-        self.repo.git.branch(flag, self, new_path)
+        self.repo.git.branch(flag, "--", self, new_path)
         self.path = "%s/%s" % (self._common_path_default, new_path)
         return self
 
@@ -283,7 +283,7 @@ class Head(Reference):
         """
         if not allow_unsafe_options:
             Git.check_unsafe_options(
-                options=Git._option_candidates([], kwargs),
+                options=Git._option_candidates([self], kwargs),
                 unsafe_options=Git.unsafe_git_pathspec_from_file_options,
             )
         kwargs["f"] = force

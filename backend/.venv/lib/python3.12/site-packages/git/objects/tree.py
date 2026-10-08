@@ -6,7 +6,6 @@
 __all__ = ["TreeModifier", "Tree"]
 
 import os
-import sys
 
 import git.diff as git_diff
 from git.util import IterableList, join_path, to_bin_sha
@@ -14,7 +13,7 @@ from git.util import IterableList, join_path, to_bin_sha
 from . import util
 from .base import IndexObjUnion, IndexObject
 from .blob import Blob
-from .fun import tree_entries_from_data, tree_to_stream
+from .fun import tree_entries_from_data, tree_to_stream, _validate_tree_entry_name
 from .submodule.base import Submodule
 
 # typing -------------------------------------------------
@@ -26,17 +25,13 @@ from typing import (
     Iterable,
     Iterator,
     List,
+    Literal,
     Tuple,
     TYPE_CHECKING,
     Type,
     Union,
     cast,
 )
-
-if sys.version_info >= (3, 8):
-    from typing import Literal
-else:
-    from typing_extensions import Literal
 
 from git.types import PathLike
 
@@ -115,8 +110,7 @@ class TreeModifier:
         :return:
             self
         """
-        if "/" in name:
-            raise ValueError("Name must not contain '/' characters")
+        _validate_tree_entry_name(name)
         if (mode >> 12) not in Tree._map_id_to_type:
             raise ValueError("Invalid object type according to mode %o" % mode)
 

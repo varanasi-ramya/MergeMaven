@@ -16,6 +16,7 @@ as the base class for their own corresponding classes.
 
 from __future__ import annotations
 
+import datetime
 import functools
 import operator
 import random
@@ -828,6 +829,17 @@ class DefaultDialect(Dialect):
 
         """
         return type_api.adapt_type(typeobj, self.colspecs)
+
+    def min_year_for_type(self, typeobj: TypeEngine[Any]) -> int:
+        """Return the earliest year the database accepts for the given
+        date or datetime type.
+
+        The default implementation returns ``datetime.MINYEAR``.
+
+        .. versionadded:: 2.0.55
+
+        """
+        return datetime.MINYEAR
 
     def has_index(self, connection, table_name, index_name, schema=None, **kw):
         if not self.has_table(connection, table_name, schema=schema, **kw):
@@ -2125,6 +2137,15 @@ class DefaultExecutionContext(ExecutionContext):
         ):
             self._setup_out_parameters(result)
 
+        if not result._soft_closed and not result._metadata.returns_rows:
+            # no results, get rowcount (which requires open cursor on
+            # some drivers) and release the cursor.  this applies to all
+            # statements that don't return rows, including DML, text(),
+            # DDL and SAVEPOINT
+            if self._rowcount is None:
+                self._rowcount = self.cursor.rowcount
+            result._soft_close()
+
         self._soft_closed = result._soft_closed
 
         if yp:
@@ -2260,12 +2281,6 @@ class DefaultExecutionContext(ExecutionContext):
             # the rows have all been fetched however.
             assert result._metadata.returns_rows
 
-        elif not result._metadata.returns_rows:
-            # no results, get rowcount
-            # (which requires open cursor on some drivers)
-            if self._rowcount is None:
-                self._rowcount = self.cursor.rowcount
-            result._soft_close()
         elif self.isupdate or self.isdelete:
             if self._rowcount is None:
                 self._rowcount = self.cursor.rowcount

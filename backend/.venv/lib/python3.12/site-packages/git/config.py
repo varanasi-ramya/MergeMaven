@@ -10,36 +10,35 @@ __all__ = ["GitConfigParser", "SectionConstraint"]
 import abc
 import configparser as cp
 import fnmatch
-from functools import wraps
 import inspect
-from io import BufferedReader, IOBase
 import logging
 import os
 import os.path as osp
 import re
 import sys
-
-from git.compat import defenc, force_text
-from git.util import LockFile
+from functools import wraps
+from io import BufferedReader, IOBase
 
 # typing-------------------------------------------------------
-
 from typing import (
+    IO,
+    TYPE_CHECKING,
     Any,
     Callable,
-    Generic,
-    IO,
-    List,
     Dict,
+    Generic,
+    List,
+    OrderedDict,
     Sequence,
-    TYPE_CHECKING,
     Tuple,
     TypeVar,
     Union,
     cast,
 )
 
-from git.types import Lit_config_levels, ConfigLevels_Tup, PathLike, assert_never, _T
+from git.compat import defenc, force_text
+from git.types import _T, ConfigLevels_Tup, Lit_config_levels, PathLike, assert_never
+from git.util import LockFile
 
 if TYPE_CHECKING:
     from io import BytesIO
@@ -47,17 +46,9 @@ if TYPE_CHECKING:
     from git.repo.base import Repo
 
 T_ConfigParser = TypeVar("T_ConfigParser", bound="GitConfigParser")
-T_OMD_value = TypeVar("T_OMD_value", str, bytes, int, float, bool)
+T_OMD_value = TypeVar("T_OMD_value", str, bytes, int, float, bool, None)
 
-if sys.version_info[:3] < (3, 7, 2):
-    # typing.Ordereddict not added until Python 3.7.2.
-    from collections import OrderedDict
-
-    OrderedDict_OMD = OrderedDict
-else:
-    from typing import OrderedDict
-
-    OrderedDict_OMD = OrderedDict[str, List[T_OMD_value]]  # type: ignore[assignment, misc]
+OrderedDict_OMD = OrderedDict[str, List[T_OMD_value]]
 
 # -------------------------------------------------------------
 
@@ -66,7 +57,7 @@ _logger = logging.getLogger(__name__)
 CONFIG_LEVELS: ConfigLevels_Tup = ("system", "user", "global", "repository")
 """The configuration level of a configuration file."""
 
-CONDITIONAL_INCLUDE_REGEXP = re.compile(r"(?<=includeIf )\"(gitdir|gitdir/i|onbranch|hasconfig:remote\.\*\.url):(.+)\"")
+CONDITIONAL_INCLUDE_REGEXP = re.compile(r"(?<=includeif )\"(gitdir|gitdir/i|onbranch|hasconfig:remote\.\*\.url):(.+)\"")
 """Section pattern to detect conditional includes.
 
 See: https://git-scm.com/docs/git-config#_conditional_includes
@@ -205,41 +196,67 @@ class SectionConstraint(Generic[T_ConfigParser]):
         self._config.__exit__(exception_type, exception_value, traceback)
 
 
+def _normalize_name(name: str) -> str:
+    """Fold section and option names, leaving quoted subsections unchanged."""
+    prefix, separator, subsection = name.partition('"')
+    return prefix.lower() + separator + subsection
+
+
 class _OMD(OrderedDict_OMD):
-    """Ordered multi-dict."""
+    """Ordered multi-dict matching config names while retaining their first spelling."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        self._keymap: Dict[str, str] = {}
+        super().__init__(*args, **kwargs)
+
+    def _key(self, key: str) -> str:
+        stored = self._keymap.get(_normalize_name(key), key)
+        return stored if super().__contains__(stored) else key
+
+    def __contains__(self, key: object) -> bool:
+        return isinstance(key, str) and super().__contains__(self._key(key))
+
+    def __delitem__(self, key: str) -> None:
+        super().__delitem__(self._key(key))
+        del self._keymap[_normalize_name(key)]
 
     def __setitem__(self, key: str, value: _T) -> None:
-        super().__setitem__(key, [value])
+        self.setall(key, [value])
+
+    def clear(self) -> None:
+        super().clear()
+        self._keymap.clear()
 
     def add(self, key: str, value: Any) -> None:
         if key not in self:
-            super().__setitem__(key, [value])
+            self[key] = value
             return
 
-        super().__getitem__(key).append(value)
+        self.getall(key).append(value)
 
     def setall(self, key: str, values: List[_T]) -> None:
+        key = self._key(key)
         super().__setitem__(key, values)
+        self._keymap[_normalize_name(key)] = key
 
     def __getitem__(self, key: str) -> Any:
-        return super().__getitem__(key)[-1]
+        return super().__getitem__(self._key(key))[-1]
 
     def getlast(self, key: str) -> Any:
-        return super().__getitem__(key)[-1]
+        return self[key]
 
     def setlast(self, key: str, value: Any) -> None:
         if key not in self:
-            super().__setitem__(key, [value])
+            self[key] = value
             return
 
-        prior = super().__getitem__(key)
-        prior[-1] = value
+        self.getall(key)[-1] = value
 
-    def get(self, key: str, default: Union[_T, None] = None) -> Union[_T, None]:
-        return super().get(key, [default])[-1]
+    def get(self, key: str, default: Union[_T, None] = None) -> Union[_T, None]:  # type: ignore[override]
+        return super().get(self._key(key), [default])[-1]
 
     def getall(self, key: str) -> List[_T]:
-        return super().__getitem__(key)
+        return super().__getitem__(self._key(key))
 
     def items(self) -> List[Tuple[str, _T]]:  # type: ignore[override]
         """List of (key, last value for key)."""
@@ -288,11 +305,18 @@ class GitConfigParser(cp.RawConfigParser, metaclass=MetaParserBuilder):
     other instances to write concurrently.
 
     :note:
-        The config is case-sensitive even when queried, hence section and option names
-        must match perfectly.
+        Section and option names are case-insensitive; quoted subsection names are
+        case-sensitive. Names retain their first spelling when enumerated or written.
+        Case variants are merged, preserving all values in the order they are read.
 
     :note:
         If used as a context manager, this will release the locked file.
+
+    :note:
+        Options without a value are stored as ``None`` and written without ``=``.
+        :meth:`get_value` and :meth:`get_values` return an empty string for them,
+        while :meth:`getboolean` returns ``True``. An explicit empty value is
+        stored as an empty string and reads as ``False`` with :meth:`getboolean`.
     """
 
     # { Configuration
@@ -306,11 +330,15 @@ class GitConfigParser(cp.RawConfigParser, metaclass=MetaParserBuilder):
     re_comment = re.compile(r"^\s*[#;]")
     # } END configuration
 
-    optvalueonly_source = r"\s*(?P<option>[^:=\s][^:=]*)"
+    optvalueonly_source = r"\s*(?P<option>[^:=\s#;][^:=#;]*)"
 
     OPTVALUEONLY = re.compile(optvalueonly_source)
 
-    OPTCRE = re.compile(optvalueonly_source + r"\s*(?P<vi>[:=])\s*" + r"(?P<value>.*)$")
+    # The option name class [^:=#;]* already consumes any spaces up to the ":" or "=",
+    # so a second \s* before the indicator would overlap it and backtrack quadratically
+    # on a line that never reaches an indicator (for example a key followed by a long
+    # whitespace run). Drop the redundant \s*; the name is right-stripped after parsing.
+    OPTCRE = re.compile(optvalueonly_source + r"(?P<vi>[:=])\s*" + r"(?P<value>.*)$")
 
     del optvalueonly_source
 
@@ -350,7 +378,7 @@ class GitConfigParser(cp.RawConfigParser, metaclass=MetaParserBuilder):
             Reference to repository to use if ``[includeIf]`` sections are found in
             configuration files.
         """
-        cp.RawConfigParser.__init__(self, dict_type=_OMD)
+        cp.RawConfigParser.__init__(self, dict_type=cast(Any, _OMD), allow_no_value=True)
         self._dict: Callable[..., _OMD]
         self._defaults: _OMD
         self._sections: _OMD
@@ -427,7 +455,7 @@ class GitConfigParser(cp.RawConfigParser, metaclass=MetaParserBuilder):
 
         try:
             self.write()
-        except IOError:
+        except OSError:
             _logger.error("Exception during destruction of GitConfigParser", exc_info=True)
         except ReferenceError:
             # This happens in Python 3... and usually means that some state cannot be
@@ -480,6 +508,24 @@ class GitConfigParser(cp.RawConfigParser, metaclass=MetaParserBuilder):
                     return False
             return escaped
 
+        def strip_inline_comment(value: str) -> Tuple[str, bool]:
+            """Cut an unquoted ``#`` or ``;`` comment and report whether a quote is open.
+
+            Quoting and backslash escapes are honoured, so a ``#`` inside a quoted
+            value is literal and an unterminated quote swallows the rest of the line.
+            """
+            quoted = escaped = False
+            for index, char in enumerate(value):
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    quoted = not quoted
+                elif char in "#;" and not quoted:
+                    return value[:index], False
+            return value, quoted
+
         def parse_value(value: str) -> str:
             parsed: List[str] = []
             whitespace: List[str] = []
@@ -508,9 +554,14 @@ class GitConfigParser(cp.RawConfigParser, metaclass=MetaParserBuilder):
 
         while True:
             # We assume to read binary!
-            line = fp.readline().decode(defenc)
-            if not line:
+            raw_line = fp.readline()
+            if not raw_line:
                 break
+            if lineno == 0 and raw_line.startswith(b"\xef\xbb\xbf"):
+                # A UTF-8 BOM is not part of the content. git skips it, so a
+                # config file written by a Windows editor still parses.
+                raw_line = raw_line[3:]
+            line = raw_line.decode(defenc)
             lineno = lineno + 1
             # Comment or blank line?
             if line.strip() == "" or self.re_comment.match(line):
@@ -544,10 +595,7 @@ class GitConfigParser(cp.RawConfigParser, metaclass=MetaParserBuilder):
                     optname, vi, optval = mo.group("option", "vi", "value")
                     optname = self.optionxform(optname.rstrip())
 
-                    if vi in ("=", ":") and ";" in optval and not optval.strip().startswith('"'):
-                        pos = optval.find(";")
-                        if pos != -1 and optval[pos - 1].isspace():
-                            optval = optval[:pos]
+                    optval, quote_open = strip_inline_comment(optval)
                     optval = optval.strip()
 
                     if len(optval) < 2 or optval[0] != '"':
@@ -575,12 +623,12 @@ class GitConfigParser(cp.RawConfigParser, metaclass=MetaParserBuilder):
                             continued = True
                         if continued:
                             optval = parse_value(optval)
-                    elif optval[-1] != '"':
+                    elif quote_open:
                         # Opens quoting and does not close: appears to start multi-line quoting.
                         is_multi_line = True
                         optval = string_decode(optval[1:])
                     elif re.search(r'(?:^|[^\\])(?:\\\\)*"', optval[1:-1]):
-                        # Preserve malformed values containing unescaped quotes.
+                        # Preserve values containing additional unescaped quotes.
                         pass
                     else:
                         # Opens and closes quoting.
@@ -589,8 +637,12 @@ class GitConfigParser(cp.RawConfigParser, metaclass=MetaParserBuilder):
                     # Preserves multiple values for duplicate optnames.
                     cursect.add(optname, optval)
                 else:
-                    # Check if it's an option with no value - it's just ignored by git.
-                    if not self.OPTVALUEONLY.match(line):
+                    # A valueless option is an implicit boolean true, not an empty value.
+                    mo = self.OPTVALUEONLY.fullmatch(line)
+                    if mo:
+                        optname = self.optionxform(mo.group("option").rstrip())
+                        cursect.add(optname, None)
+                    else:
                         if not e:
                             e = cp.ParsingError(fpname)
                         e.append(lineno, repr(line))
@@ -627,15 +679,17 @@ class GitConfigParser(cp.RawConfigParser, metaclass=MetaParserBuilder):
                 for key, values in self._sections[section].items_all()
                 if key != "__name__"
                 for value in values
+                if value is not None
             ]
 
         paths = []
 
         for section in self.sections():
-            if section == "include":
+            normalized_section = _normalize_name(section)
+            if normalized_section == "include":
                 paths += _all_items(section)
 
-            match = CONDITIONAL_INCLUDE_REGEXP.search(section)
+            match = CONDITIONAL_INCLUDE_REGEXP.search(normalized_section)
             if match is None or self._repo is None:
                 continue
 
@@ -722,7 +776,7 @@ class GitConfigParser(cp.RawConfigParser, metaclass=MetaParserBuilder):
                     with open(file_path, "rb") as fp:
                         file_ok = True
                         self._read(fp, fp.name)
-                except IOError:
+                except OSError:
                     continue
 
             # Read includes and append those that we didn't handle yet. We expect all
@@ -762,13 +816,16 @@ class GitConfigParser(cp.RawConfigParser, metaclass=MetaParserBuilder):
         def write_section(name: str, section_dict: _OMD) -> None:
             fp.write(("[%s]\n" % name).encode(defenc))
 
-            values: Sequence[str]  # Runtime only gets str in tests, but should be whatever _OMD stores.
-            v: str
+            values: List[Any]
+            v: Any
             for key, values in section_dict.items_all():
                 if key == "__name__":
                     continue
 
                 for v in values:
+                    if v is None:
+                        fp.write(("\t%s\n" % key).encode(defenc))
+                        continue
                     value = self._value_to_string(v)
                     if any(char in value for char in '\n\t\b\\"#;') or value[:1].isspace() or value[-1:].isspace():
                         value = value.replace("\\", "\\\\").replace('"', '\\"')
@@ -785,11 +842,11 @@ class GitConfigParser(cp.RawConfigParser, metaclass=MetaParserBuilder):
         for name, value in self._sections.items():
             write_section(name, value)
 
-    def items(self, section_name: str) -> List[Tuple[str, str]]:  # type: ignore[override]
+    def items(self, section_name: str) -> List[Tuple[str, Union[str, None]]]:  # type: ignore[override]
         """:return: list((option, value), ...) pairs of all items in the given section"""
         return [(k, v) for k, v in super().items(section_name) if k != "__name__"]
 
-    def items_all(self, section_name: str) -> List[Tuple[str, List[str]]]:
+    def items_all(self, section_name: str) -> List[Tuple[str, List[Union[str, None]]]]:
         """:return: list((option, [values...]), ...) pairs of all items in the given section"""
         rv = _OMD(self._defaults)
 
@@ -843,6 +900,8 @@ class GitConfigParser(cp.RawConfigParser, metaclass=MetaParserBuilder):
             for key, values in section.items_all():
                 if key != "__name__":
                     for raw_value in values:
+                        if raw_value is None:
+                            continue
                         if "\r" in self._value_to_string(raw_value) or "\x00" in self._value_to_string(raw_value):
                             raise ValueError("Git config values must not contain CR or NUL")
 
@@ -867,7 +926,7 @@ class GitConfigParser(cp.RawConfigParser, metaclass=MetaParserBuilder):
 
     def _assure_writable(self, method_name: str) -> None:
         if self.read_only:
-            raise IOError("Cannot execute non-constant method %s.%s" % (self, method_name))
+            raise OSError(f"Cannot execute non-constant method {self}.{method_name}")
 
     def add_section(self, section: "cp._SectionName") -> None:
         """Assures added options will stay in order."""
@@ -879,7 +938,6 @@ class GitConfigParser(cp.RawConfigParser, metaclass=MetaParserBuilder):
         """:return: ``True`` if this instance may change the configuration file"""
         return self._read_only
 
-    # FIXME: Figure out if default or return type can really include bool.
     def get_value(
         self,
         section: str,
@@ -896,7 +954,7 @@ class GitConfigParser(cp.RawConfigParser, metaclass=MetaParserBuilder):
             did not exist.
 
         :return:
-            A properly typed value, either int, float or string
+            A properly typed value, either int, float, string or bool
 
         :raise TypeError:
             In case the value could not be understood.
@@ -927,7 +985,7 @@ class GitConfigParser(cp.RawConfigParser, metaclass=MetaParserBuilder):
             in case the option did not exist.
 
         :return:
-            A list of properly typed values, either int, float or string
+            A list of properly typed values, either int, float, string or bool
 
         :raise TypeError:
             In case the value could not be understood.
@@ -943,7 +1001,19 @@ class GitConfigParser(cp.RawConfigParser, metaclass=MetaParserBuilder):
 
         return [self._string_to_value(valuestr) for valuestr in lst]
 
-    def _string_to_value(self, valuestr: str) -> Union[int, float, str, bool]:
+    def _convert_to_boolean(self, value: Union[str, None]) -> bool:
+        if value is None:
+            return True
+        if value == "":
+            return False
+        try:
+            return self.BOOLEAN_STATES[value.lower()]
+        except KeyError:
+            raise ValueError("Not a boolean: %s" % value) from None
+
+    def _string_to_value(self, valuestr: Union[str, None]) -> Union[int, float, str, bool]:
+        if valuestr is None:
+            return ""
         types = (int, float)
         for numtype in types:
             try:
@@ -958,9 +1028,9 @@ class GitConfigParser(cp.RawConfigParser, metaclass=MetaParserBuilder):
 
         # Try boolean values as git uses them.
         vl = valuestr.lower()
-        if vl == "false":
+        if vl in ("false", "no", "off"):
             return False
-        if vl == "true":
+        if vl in ("true", "yes", "on"):
             return True
 
         if not isinstance(valuestr, str):

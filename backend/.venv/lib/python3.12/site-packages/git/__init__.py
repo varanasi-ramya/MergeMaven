@@ -86,7 +86,7 @@ __all__ = [
     "to_hex_sha",
 ]
 
-__version__ = '3.1.62'
+__version__ = '3.2.0'
 
 from typing import Any, List, Optional, Sequence, TYPE_CHECKING, Tuple, Union
 
@@ -295,6 +295,6 @@ def refresh(path: Optional[PathLike] = None) -> None:
 try:
     refresh()
 except Exception as _exc:
-    raise ImportError("Failed to initialize: {0}".format(_exc)) from _exc
+    raise ImportError(f"Failed to initialize: {_exc}") from _exc
 
 # } END initialize git executable path

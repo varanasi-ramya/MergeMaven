@@ -27,7 +27,7 @@ from string import digits
 from gitdb.exc import BadName, BadObject
 
 from git.cmd import Git
-from git.exc import WorkTreeRepositoryUnsupported
+from git.exc import GitCommandError, WorkTreeRepositoryUnsupported
 from git.objects import Object
 from git.objects.util import parse_date
 from git.refs import SymbolicReference
@@ -35,16 +35,15 @@ from git.util import cygpath, bin_to_hex, hex_to_bin
 
 # Typing ----------------------------------------------------------------------
 
-from typing import Iterator, Optional, TYPE_CHECKING, Tuple, Union, cast, overload
+from typing import Optional, TYPE_CHECKING, Union, cast, overload
 
 from git.types import AnyGitObject, Literal, PathLike
 
 if TYPE_CHECKING:
-    from git.db import GitCmdObjectDB
+    from gitdb.db import CompoundDB, LooseObjectDB
     from git.objects import Commit
     from git.refs.reference import Reference
     from git.refs.log import RefLog, RefLogEntry
-    from git.refs.tag import Tag
 
     from .base import Repo
 
@@ -152,13 +151,13 @@ def find_submodule_git_dir(d: PathLike) -> Optional[PathLike]:
         # Cygwin creates submodules prefixed with `/cygdrive/...`.
         # Cygwin git understands Cygwin paths much better than Windows ones.
         # Also the Cygwin tests are assuming Cygwin paths.
-        path = cygpath(path)
+        path = cygpath(path, expand_vars=False)
     if not osp.isabs(path):
         path = osp.normpath(osp.join(osp.dirname(d), path))
     return path if is_git_dir(path) else None
 
 
-def short_to_long(odb: "GitCmdObjectDB", hexsha: str) -> Optional[bytes]:
+def short_to_long(odb: Union["CompoundDB", "LooseObjectDB"], hexsha: str) -> Optional[bytes]:
     """
     :return:
         Long hexadecimal sha1 from the given less than 40 byte hexsha, or ``None`` if no
@@ -261,7 +260,7 @@ def name_to_object(repo: "Repo", name: str, return_ref: bool = False) -> Union[A
     return Object.new_from_sha(repo, hex_to_bin(hexsha))
 
 
-def deref_tag(tag: "Tag") -> AnyGitObject:
+def deref_tag(tag: AnyGitObject) -> AnyGitObject:
     """Recursively dereference a tag and return the resulting object."""
     while True:
         try:
@@ -272,7 +271,7 @@ def deref_tag(tag: "Tag") -> AnyGitObject:
     return tag
 
 
-def to_commit(obj: Object) -> "Commit":
+def to_commit(obj: AnyGitObject) -> "Commit":
     """Convert the given object to a commit if possible and return it."""
     if obj.type == "tag":
         obj = deref_tag(obj)
@@ -473,100 +472,23 @@ def _find_closing_brace(rev: str, start: int) -> int:
     raise ValueError("Missing closing brace to define type in %s" % rev)
 
 
-def _parse_search(pattern: str) -> Tuple[str, bool]:
+def _find_commit_by_message(repo: "Repo", rev: Optional[AnyGitObject], pattern: str) -> AnyGitObject:
     if not pattern:
         raise ValueError("Revision search requires a pattern")
-    # END handle empty pattern
-
-    if pattern.startswith("!-"):
-        return pattern[2:], True
-    if pattern.startswith("!!"):
-        return pattern[1:], False
-    if pattern.startswith("!"):
+    if pattern.startswith("!") and not pattern.startswith(("!-", "!!")):
         raise ValueError("Need one character after /!, typically -")
-    return pattern, False
 
-
-def _unescape_braced_regex(pattern: str) -> str:
-    out = []
-    idx = 0
-    while idx < len(pattern):
-        char = pattern[idx]
-        if char == "\\" and idx + 1 < len(pattern):
-            next_char = pattern[idx + 1]
-            if next_char in "{}\\":
-                out.append(next_char)
-            else:
-                out.append(char)
-                out.append(next_char)
-            # END handle escaped char
-            idx += 2
-            continue
-        # END handle backslash
-        out.append(char)
-        idx += 1
-    # END for each char
-    return "".join(out)
-
-
-def _find_commit_by_message(
-    repo: "Repo", rev: Optional[AnyGitObject], pattern: str, braced: bool = False
-) -> AnyGitObject:
-    pattern, negated = _parse_search(_unescape_braced_regex(pattern) if braced else pattern)
+    # Git's native regular expressions avoid Python's exponential backtracking,
+    # and its history walk does not deserialize every visited commit in Python.
+    search = ":/" + pattern if rev is None else "%s^{/%s}" % (to_commit(rev).hexsha, pattern)
     try:
-        regex = re.compile(pattern)
-    except re.error as e:
-        raise ValueError("Invalid commit message regex %r" % pattern) from e
-    # END handle invalid regex
-    if rev is None:
-        commits = _all_ref_commits(repo)
-    else:
-        commits = _reachable_commits([to_commit(cast(Object, rev))])
-    # END handle starting point
-
-    for commit in commits:
-        message = commit.message
-        if isinstance(message, bytes):
-            message = message.decode(commit.encoding, "replace")
-        # END handle bytes message
-        matches = regex.search(message or "") is not None
-        if matches != negated:
-            return commit
-        # END found commit
-    # END for each commit
-    raise BadName("No commit found matching message pattern %r" % pattern)
-
-
-def _all_ref_commits(repo: "Repo") -> Iterator["Commit"]:
-    starts = []
-    for ref in repo.references:
-        try:
-            starts.append(to_commit(cast(Object, ref.object)))
-        except (BadName, ValueError):
-            pass
-        # END skip refs that do not point to commits
-    # END for each ref
-    try:
-        starts.append(repo.head.commit)
-    except ValueError:
-        pass
-    # END handle unborn head
-    return _reachable_commits(starts)
-
-
-def _reachable_commits(starts: list["Commit"]) -> Iterator["Commit"]:
-    seen = set()
-    pending = starts[:]
-    while pending:
-        pending.sort(key=lambda commit: commit.committed_date, reverse=True)
-        commit = pending.pop(0)
-        if commit.binsha in seen:
-            continue
-        # END skip seen commit
-        seen.add(commit.binsha)
-        yield commit
-        pending.extend(commit.parents)
-    # END while commits remain
+        # The fixed prefix prevents options without requiring Git 2.30's
+        # --end-of-options support in rev-parse.
+        hexsha = repo.git.rev_parse("--verify", search)
+    except GitCommandError as e:
+        # Git does not distinguish invalid regexes from searches with no match.
+        raise BadName("No commit found matching message pattern %r" % pattern) from e
+    return _object_from_hexsha(repo, hexsha)
 
 
 def _index_lookup(repo: "Repo", spec: str) -> AnyGitObject:
@@ -589,7 +511,7 @@ def _index_lookup(repo: "Repo", spec: str) -> AnyGitObject:
 
 def _tree_lookup(obj: AnyGitObject, path: str) -> AnyGitObject:
     if obj.type != "tree":
-        obj = to_commit(cast(Object, obj)).tree
+        obj = to_commit(obj).tree
     # END get tree
     if not path:
         return obj
@@ -598,15 +520,15 @@ def _tree_lookup(obj: AnyGitObject, path: str) -> AnyGitObject:
 
 def _peel(obj: AnyGitObject, output_type: str, repo: "Repo", rev: str) -> AnyGitObject:
     if output_type.startswith("/"):
-        return _find_commit_by_message(repo, obj, output_type[1:], braced=True)
+        return _find_commit_by_message(repo, obj, output_type[1:])
     if output_type == "":
         return deref_tag(obj) if obj.type == "tag" else obj
     if output_type == "object":
         return obj
     if output_type == "commit":
-        return to_commit(cast(Object, obj))
+        return to_commit(obj)
     if output_type == "tree":
-        return to_commit(cast(Object, obj)).tree if obj.type != "tree" else obj
+        return to_commit(obj).tree if obj.type != "tree" else obj
     if output_type == "blob":
         obj = deref_tag(obj) if obj.type == "tag" else obj
         if obj.type == output_type:
@@ -654,6 +576,10 @@ def rev_parse(repo: "Repo", rev: str) -> AnyGitObject:
     :param rev:
         :manpage:`git-rev-parse(1)`-compatible revision specification as string.
         Please see :manpage:`git-rev-parse(1)` for details.
+
+        Commit message searches use Git's native extended regular expressions.
+        Invalid search expressions and searches without a match both raise
+        :exc:`~gitdb.exc.BadName`.
 
     :raise gitdb.exc.BadObject:
         If the given revision could not be found.

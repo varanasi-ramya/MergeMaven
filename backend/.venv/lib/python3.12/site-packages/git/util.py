@@ -34,6 +34,7 @@ import contextlib
 from functools import wraps
 import getpass
 import logging
+import ntpath
 import os
 import os.path as osp
 from pathlib import Path
@@ -68,7 +69,6 @@ from gitdb.util import (
 from typing import (
     Any,
     AnyStr,
-    BinaryIO,
     Callable,
     Dict,
     Generator,
@@ -101,6 +101,8 @@ from git.types import (
     PathLike,
     Protocol,
     SupportsIndex,
+    SupportsRead,
+    SupportsWrite,
     Total_TD,
     runtime_checkable,
 )
@@ -253,7 +255,7 @@ def rmfile(path: PathLike) -> None:
         os.remove(path)
 
 
-def stream_copy(source: BinaryIO, destination: BinaryIO, chunk_size: int = 512 * 1024) -> int:
+def stream_copy(source: SupportsRead[AnyStr], destination: SupportsWrite[AnyStr], chunk_size: int = 512 * 1024) -> int:
     """Copy all data from the `source` stream into the `destination` stream in chunks
     of size `chunk_size`.
 
@@ -377,6 +379,33 @@ def _to_relative_path(root: PathLike, path: PathLike) -> str:
     if path_str.endswith(separators) and relative_path != "." and not relative_path.endswith("/"):
         relative_path += "/"
     return relative_path
+
+
+_HFS_IGNORABLES = str.maketrans(
+    "", "", "\u200c\u200d\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u206a\u206b\u206c\u206d\u206e\u206f\ufeff"
+)
+
+
+def _validate_repo_path(path: PathLike) -> None:
+    """Reject unsafe tree/index paths without normalizing away their components.
+
+    Protect Git metadata aliases on NTFS and HFS even when writing on another
+    platform. Other POSIX filename characters, including newlines, remain valid.
+    """
+    name = os.fspath(path)
+    if not name or "\0" in name or ntpath.splitdrive(name)[0] or name.startswith("/"):
+        raise ValueError("Invalid repository path %r" % name)
+    if os.name == "nt" and "\\" in name:
+        raise ValueError("Index paths must use '/' separators: %r" % name)
+    for component in name.split("/"):
+        if component in ("", ".", ".."):
+            raise ValueError("Invalid repository path %r" % name)
+        # NTFS recognizes backslashes and alternate data streams in metadata names.
+        for part in component.split("\\"):
+            ntfs_name = part.split(":", 1)[0].rstrip(" .").lower()
+            hfs_name = part.translate(_HFS_IGNORABLES).lower()
+            if ntfs_name in (".git", "git~1") or hfs_name == ".git":
+                raise ValueError("Repository path aliases Git metadata: %r" % name)
 
 
 def assure_directory_exists(path: PathLike, is_file: bool = False) -> bool:
@@ -515,7 +544,7 @@ def decygpath(path: PathLike) -> str:
 
 
 #: Store boolean flags denoting if a specific Git executable
-#: is from a Cygwin installation (since `cache_lru()` unsupported on PY2).
+#: is from a Cygwin installation. TODO: use @functools.lru_cache(user_function)
 _is_cygwin_cache: Dict[str, Optional[bool]] = {}
 
 
@@ -557,8 +586,7 @@ def is_cygwin_git(git_executable: PathLike) -> bool: ...
 
 
 def is_cygwin_git(git_executable: Union[None, PathLike]) -> bool:
-    # TODO: when py3.7 support is dropped, use the new interpolation f"{variable=}"
-    _logger.debug(f"sys.platform={sys.platform!r}, git_executable={git_executable!r}")
+    _logger.debug(f"{sys.platform=}, {git_executable=}")
     if sys.platform != "cygwin":
         return False
     elif git_executable is None:
@@ -1139,7 +1167,7 @@ class LockFile:
             return
         lock_file = self._lock_file_path()
         if osp.isfile(lock_file):
-            raise IOError(
+            raise OSError(
                 "Lock for file %r did already exist, delete %r in case the lock is illegal"
                 % (self._file_path, lock_file)
             )
@@ -1148,7 +1176,7 @@ class LockFile:
             with open(lock_file, mode="w"):
                 pass
         except OSError as e:
-            raise IOError(str(e)) from e
+            raise OSError(str(e)) from e
 
         self._owns_lock = True
 
@@ -1215,7 +1243,7 @@ class BlockingLockFile(LockFile):
         while True:
             try:
                 super()._obtain_lock()
-            except IOError as e:
+            except OSError as e:
                 # synity check: if the directory leading to the lockfile is not
                 # readable anymore, raise an exception
                 curtime = time.time()
@@ -1224,7 +1252,7 @@ class BlockingLockFile(LockFile):
                         self._lock_file_path(),
                         curtime - starttime,
                     )
-                    raise IOError(msg) from e
+                    raise OSError(msg) from e
                 # END handle missing directory
 
                 if curtime >= maxtime:
@@ -1232,7 +1260,7 @@ class BlockingLockFile(LockFile):
                         maxtime - starttime,
                         self._lock_file_path(),
                     )
-                    raise IOError(msg) from e
+                    raise OSError(msg) from e
                 # END abort if we wait too long
                 time.sleep(self._check_interval)
             else:

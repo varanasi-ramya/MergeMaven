@@ -3,8 +3,11 @@
 # This code was automatically generated from _c_ast.cfg
 #
 # Do not modify it directly. Modify the configuration file and
-# run the generator again.
+# run 'make regen-ast' from the repository root to regenerate and format it.
 # ** ** *** ** **
+#
+# The order of generated __slots__ is significant to Node.__repr__.
+# ruff: noqa: RUF023
 #
 # pycparser: c_ast.py
 #
@@ -16,7 +19,7 @@
 
 
 import sys
-from typing import Any, ClassVar, IO, Optional
+from typing import IO, Any, ClassVar
 
 
 def _repr(obj):
@@ -24,7 +27,7 @@ def _repr(obj):
     Get the representation of an object, with dedicated pprint-like format for lists.
     """
     if isinstance(obj, list):
-        return "[" + (",\n ".join((_repr(e).replace("\n", "\n ") for e in obj))) + "\n]"
+        return "[" + (",\n ".join(_repr(e).replace("\n", "\n ") for e in obj)) + "\n]"
     else:
         return repr(obj)
 
@@ -34,7 +37,7 @@ class Node:
     """ Abstract base class for AST nodes.
     """
     attr_names: ClassVar[tuple[str, ...]] = ()
-    coord: Optional[Any]
+    coord: Any | None
 
     def __repr__(self):
         """Generates a python representation of the current node"""
@@ -65,7 +68,6 @@ class Node:
 
     def children(self):
         """A sequence of all children that are Nodes"""
-        pass
 
     def show(
         self,
@@ -75,7 +77,7 @@ class Node:
         showemptyattrs: bool = True,
         nodenames: bool = False,
         showcoord: bool = False,
-        _my_node_name: Optional[str] = None,
+        _my_node_name: str | None = None,
     ):
         """Pretty print the Node and all its attributes and
         children (recursively) to a buffer.
@@ -110,7 +112,7 @@ class Node:
         if self.attr_names:
 
             def is_empty(v):
-                v is None or (hasattr(v, "__len__") and len(v) == 0)
+                return v is None or (hasattr(v, "__len__") and len(v) == 0)
 
             nvlist = [
                 (n, getattr(self, n))
@@ -355,8 +357,7 @@ class Case(Node):
     def __iter__(self):
         if self.expr is not None:
             yield self.expr
-        for child in self.stmts or []:
-            yield child
+        yield from self.stmts or []
 
     attr_names = ()
 
@@ -400,8 +401,7 @@ class Compound(Node):
         return tuple(nodelist)
 
     def __iter__(self):
-        for child in self.block_items or []:
-            yield child
+        yield from self.block_items or []
 
     attr_names = ()
 
@@ -537,8 +537,7 @@ class DeclList(Node):
         return tuple(nodelist)
 
     def __iter__(self):
-        for child in self.decls or []:
-            yield child
+        yield from self.decls or []
 
     attr_names = ()
 
@@ -557,8 +556,7 @@ class Default(Node):
         return tuple(nodelist)
 
     def __iter__(self):
-        for child in self.stmts or []:
-            yield child
+        yield from self.stmts or []
 
     attr_names = ()
 
@@ -676,8 +674,7 @@ class EnumeratorList(Node):
         return tuple(nodelist)
 
     def __iter__(self):
-        for child in self.enumerators or []:
-            yield child
+        yield from self.enumerators or []
 
     attr_names = ()
 
@@ -696,8 +693,7 @@ class ExprList(Node):
         return tuple(nodelist)
 
     def __iter__(self):
-        for child in self.exprs or []:
-            yield child
+        yield from self.exprs or []
 
     attr_names = ()
 
@@ -716,8 +712,7 @@ class FileAST(Node):
         return tuple(nodelist)
 
     def __iter__(self):
-        for child in self.ext or []:
-            yield child
+        yield from self.ext or []
 
     attr_names = ()
 
@@ -831,8 +826,7 @@ class FuncDef(Node):
             yield self.decl
         if self.body is not None:
             yield self.body
-        for child in self.param_decls or []:
-            yield child
+        yield from self.param_decls or []
 
     attr_names = ()
 
@@ -935,8 +929,7 @@ class InitList(Node):
         return tuple(nodelist)
 
     def __iter__(self):
-        for child in self.exprs or []:
-            yield child
+        yield from self.exprs or []
 
     attr_names = ()
 
@@ -981,8 +974,7 @@ class NamedInitializer(Node):
     def __iter__(self):
         if self.expr is not None:
             yield self.expr
-        for child in self.name or []:
-            yield child
+        yield from self.name or []
 
     attr_names = ()
 
@@ -1001,8 +993,7 @@ class ParamList(Node):
         return tuple(nodelist)
 
     def __iter__(self):
-        for child in self.params or []:
-            yield child
+        yield from self.params or []
 
     attr_names = ()
 
@@ -1088,8 +1079,7 @@ class Struct(Node):
         return tuple(nodelist)
 
     def __iter__(self):
-        for child in self.decls or []:
-            yield child
+        yield from self.decls or []
 
     attr_names = ("name",)
 
@@ -1292,8 +1282,7 @@ class Union(Node):
         return tuple(nodelist)
 
     def __iter__(self):
-        for child in self.decls or []:
-            yield child
+        yield from self.decls or []
 
     attr_names = ("name",)
 

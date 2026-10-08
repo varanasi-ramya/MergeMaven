@@ -14,7 +14,7 @@ import glob
 from io import BytesIO
 import os
 import os.path as osp
-from stat import S_ISLNK
+from stat import S_ISLNK, S_ISREG
 import subprocess
 import sys
 import tempfile
@@ -36,6 +36,7 @@ from git.util import (
     file_contents_ro,
     _is_path_rooted,
     _to_relative_path,
+    _validate_repo_path,
     to_native_path_linux,
     unbare_repo,
     to_bin_sha,
@@ -310,7 +311,7 @@ class IndexFile(LazyMixin, git_diff.Diffable, Serializable):
         return self
 
     @classmethod
-    def new(cls, repo: "Repo", *tree_sha: Union[str, Tree]) -> "IndexFile":
+    def new(cls, repo: "Repo", *tree_sha: Union[str, bytes, Tree]) -> "IndexFile":
         """Merge the given treeish revisions into a new index which is returned.
 
         This method behaves like ``git-read-tree --aggressive`` when doing the merge.
@@ -326,7 +327,9 @@ class IndexFile(LazyMixin, git_diff.Diffable, Serializable):
             If you intend to write such a merged Index, supply an alternate
             ``file_path`` to its :meth:`write` method.
         """
-        tree_sha_bytes: List[bytes] = [to_bin_sha(str(t)) for t in tree_sha]
+        tree_sha_bytes: List[bytes] = [
+            to_bin_sha(t if isinstance(t, bytes) else str(t).encode("ascii")) for t in tree_sha
+        ]
         base_entries = aggressive_tree_merge(repo.odb, tree_sha_bytes)
 
         inst = cls(repo)
@@ -474,7 +477,17 @@ class IndexFile(LazyMixin, git_diff.Diffable, Serializable):
                     continue
             # END glob handling
             try:
-                for root, _dirs, files in os.walk(abs_path, onerror=raise_exc):
+                for root, dirs, files in os.walk(abs_path, onerror=raise_exc):
+                    for dirname in dirs[:]:
+                        directory = osp.join(root, dirname)
+                        try:
+                            _validate_repo_path(to_native_path_linux(osp.relpath(directory, r)))
+                        except ValueError:
+                            dirs.remove(dirname)
+                            continue
+                        if osp.islink(directory):
+                            dirs.remove(dirname)
+                            yield osp.relpath(directory, r)
                     for rela_file in files:
                         # Add relative paths only.
                         yield osp.join(root.replace(rs, ""), rela_file)
@@ -523,7 +536,7 @@ class IndexFile(LazyMixin, git_diff.Diffable, Serializable):
         if proc.stdin is not None:
             try:
                 proc.stdin.write(("%s\n" % filepath).encode(defenc))
-            except IOError as e:
+            except OSError as e:
                 # Pipe broke, usually because some error happened.
                 raise fmakeexc() from e
             # END write exception handling
@@ -715,6 +728,8 @@ class IndexFile(LazyMixin, git_diff.Diffable, Serializable):
             else:
                 raise TypeError("Invalid Type: %r" % item)
         # END for each item
+        for entry in entries:
+            _validate_repo_path(entry.path)
         return paths, entries
 
     def _store_path(self, filepath: PathLike, fprogress: Callable) -> BaseIndexEntry:
@@ -724,21 +739,43 @@ class IndexFile(LazyMixin, git_diff.Diffable, Serializable):
             This needs the :func:`~git.index.util.git_working_dir` decorator active!
             This must be ensured in the calling code.
         """
-        st = os.lstat(filepath)  # Handles non-symlinks as well.
+        filepath = self._to_relative_path(filepath)
+        _validate_repo_path(filepath)
+        parent = osp.realpath(self.repo.working_dir)
+        for component in os.fspath(filepath).split("/")[:-1]:
+            parent = osp.join(parent, component)
+            if osp.islink(parent) or osp.normcase(osp.realpath(parent)) != osp.normcase(osp.abspath(parent)):
+                raise ValueError("Cannot stage a path beyond a symbolic link: %r" % filepath)
+        st = os.lstat(filepath)
+        if not S_ISLNK(st.st_mode) and not S_ISREG(st.st_mode):
+            raise ValueError("Can only stage a regular file or symbolic link: %r" % filepath)
 
+        stream_size = st.st_size
         if S_ISLNK(st.st_mode):
-            # In PY3, readlink is a string, but we need bytes.
-            # In PY2, it was just OS encoded bytes, we assumed UTF-8.
+            # readlink is a string, but we need bytes.
+            target = force_bytes(os.readlink(filepath), encoding=defenc)
+            stream_size = len(target)
+
             def open_stream() -> BinaryIO:
-                return BytesIO(force_bytes(os.readlink(filepath), encoding=defenc))
+                return BytesIO(target)
         else:
 
             def open_stream() -> BinaryIO:
-                return open(filepath, "rb")
+                # Do not follow a final symlink or block on a FIFO substituted
+                # between lstat and open on platforms supporting these flags.
+                def opener(path: str, flags: int) -> int:
+                    return os.open(path, flags | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
+
+                return open(filepath, "rb", opener=opener)
 
         with open_stream() as stream:
+            if not S_ISLNK(st.st_mode):
+                st = os.fstat(stream.fileno())
+                if not S_ISREG(st.st_mode):
+                    raise ValueError("Can only stage a regular file: %r" % filepath)
+                stream_size = st.st_size
             fprogress(filepath, False, filepath)
-            istream = self.repo.odb.store(IStream(Blob.type, st.st_size, stream))
+            istream = self.repo.odb.store(IStream(Blob.type, stream_size, stream))
             fprogress(filepath, True, filepath)
         return BaseIndexEntry(
             (
@@ -776,7 +813,7 @@ class IndexFile(LazyMixin, git_diff.Diffable, Serializable):
                 blob = Blob(
                     self.repo,
                     Blob.NULL_BIN_SHA,
-                    stat_mode_to_index_mode(os.stat(abspath).st_mode),
+                    stat_mode_to_index_mode(os.lstat(abspath).st_mode),
                     to_native_path_linux(gitrelative_path),
                 )
                 # TODO: variable undefined
@@ -989,6 +1026,8 @@ class IndexFile(LazyMixin, git_diff.Diffable, Serializable):
         # FINALIZE
         # Add the new entries to this instance.
         for entry in entries_added:
+            _validate_repo_path(entry.path)
+        for entry in entries_added:
             self.entries[(entry.path, 0)] = IndexEntry.from_base(entry)
 
         if write:
@@ -1094,6 +1133,7 @@ class IndexFile(LazyMixin, git_diff.Diffable, Serializable):
         self,
         items: Union[PathLike, Sequence[Union[PathLike, Blob, BaseIndexEntry, "Submodule"]]],
         skip_errors: bool = False,
+        allow_unsafe_options: bool = False,
         **kwargs: Any,
     ) -> List[Tuple[str, str]]:
         """Rename/move the items, whereas the last item is considered the destination of
@@ -1114,6 +1154,10 @@ class IndexFile(LazyMixin, git_diff.Diffable, Serializable):
             If ``True``, errors such as ones resulting from missing source files will be
             skipped.
 
+        :param allow_unsafe_options:
+            Allow unsafe options such as ``--pathspec-from-file`` to be passed to
+            :manpage:`git-mv(1)`.
+
         :param kwargs:
             Additional arguments you would like to pass to :manpage:`git-mv(1)`, such as
             ``dry_run`` or ``force``.
@@ -1130,9 +1174,15 @@ class IndexFile(LazyMixin, git_diff.Diffable, Serializable):
         :raise git.exc.GitCommandError:
             If git could not handle your request.
         """
+        if not allow_unsafe_options:
+            Git.check_unsafe_options(
+                options=Git._option_candidates([], kwargs),
+                unsafe_options=Git.unsafe_git_pathspec_from_file_options,
+            )
         args = []
         if skip_errors:
             args.append("-k")
+        args.append("--")
 
         paths = self._items_to_rela_paths(items)
         if len(paths) < 2:
@@ -1235,7 +1285,7 @@ class IndexFile(LazyMixin, git_diff.Diffable, Serializable):
     def _commit_editmsg_filepath(self) -> str:
         return osp.join(self.repo.common_dir, "COMMIT_EDITMSG")
 
-    def _flush_stdin_and_wait(cls, proc: "Popen[bytes]", ignore_stdout: bool = False) -> bytes:
+    def _flush_stdin_and_wait(self, proc: "Popen[bytes]", ignore_stdout: bool = False) -> bytes:
         stdin_IO = proc.stdin
         if stdin_IO:
             stdin_IO.flush()
@@ -1378,6 +1428,9 @@ class IndexFile(LazyMixin, git_diff.Diffable, Serializable):
 
         # END stderr handler
 
+        # Read and validate the index before Git trusts its paths for checkout.
+        self._delete_entries_cache()
+        self.entries  # noqa: B018
         if paths is None:
             args.append("--all")
             kwargs["as_process"] = 1

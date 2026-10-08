@@ -2569,7 +2569,12 @@ class TextClause(AbstractTextClause, inspection.Inspectable["TextClause"]):
         ("text", InternalTraversal.dp_string),
     ] + ExecutableStatement._executable_traverse_internals
 
-    _bind_params_regex = re.compile(r"(?<![:\w\x5c]):(\w+)(?!:)", re.UNICODE)
+    # also used by the compiler to render the text; the two must find
+    # the same names, else a name is rendered for which no
+    # BindParameter exists
+    _bind_params_regex = re.compile(
+        r"(?<![:\w\x5c]):(\w+)(?![:\w])", re.UNICODE
+    )
 
     @property
     def _is_star(self) -> bool:  # type: ignore[override]
@@ -2736,6 +2741,30 @@ class TextClause(AbstractTextClause, inspection.Inspectable["TextClause"]):
             return self
 
 
+class _TStringText(ClauseElement):
+    """Represent a literal string portion of a :class:`.TString`.
+
+    Unlike :class:`.TextClause`, the text is not scanned for bound parameter
+    names and has no escaping rules; it is rendered as is.
+
+    .. versionadded:: 2.1.2
+
+    """
+
+    __visit_name__ = "tstring_text"
+
+    _traverse_internals: _TraverseInternalsType = [
+        ("text", InternalTraversal.dp_string)
+    ]
+
+    def __init__(self, text: str):
+        self.text = text
+
+    @property
+    def _is_star(self) -> bool:  # type: ignore[override]
+        return self.text == "*"
+
+
 class TString(AbstractTextClause, inspection.Inspectable["TString"]):
     """Represent a SQL template string using Python 3.14+ t-strings.
 
@@ -2770,7 +2799,7 @@ class TString(AbstractTextClause, inspection.Inspectable["TString"]):
     def _is_star(self) -> bool:  # type: ignore[override]
         return (
             len(self.parts) == 1
-            and isinstance(self.parts[0], TextClause)
+            and isinstance(self.parts[0], _TStringText)
             and self.parts[0]._is_star
         )
 
@@ -2789,7 +2818,7 @@ class TString(AbstractTextClause, inspection.Inspectable["TString"]):
 
         for part in template:
             if isinstance(part, str):
-                self.parts.append(TextClause(part))
+                self.parts.append(_TStringText(part))
             else:
                 assert hasattr(part, "value")
                 self.parts.append(

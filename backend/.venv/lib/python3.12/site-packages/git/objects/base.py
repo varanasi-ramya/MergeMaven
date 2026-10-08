@@ -9,6 +9,7 @@ import os.path as osp
 
 import gitdb.typ as dbtyp
 
+from git.compat import force_text
 from git.exc import WorkTreeRepositoryUnsupported
 from git.util import LazyMixin, bin_to_hex, join_path_native, stream_copy
 
@@ -18,7 +19,7 @@ from .util import get_object_type_by_name
 
 from typing import Any, TYPE_CHECKING, Union
 
-from git.types import AnyGitObject, GitObjectTypeString, PathLike
+from git.types import AnyGitObject, GitObjectTypeString, PathLike, SupportsWrite
 
 if TYPE_CHECKING:
     from gitdb.base import OStream
@@ -107,6 +108,10 @@ class Object(LazyMixin):
 
         :param binsha:
             20 byte SHA1
+
+        :note:
+            Object data is loaded lazily. Loading uncached :attr:`size` metadata
+            raises :exc:`ValueError` if `binsha` refers to a different object type.
         """
         super().__init__()
         self.repo = repo
@@ -155,6 +160,9 @@ class Object(LazyMixin):
         """Retrieve object information."""
         if attr == "size":
             oinfo = self.repo.odb.info(self.binsha)
+            typename = force_text(oinfo.type, "ascii")
+            if self.type is not None and typename != self.type:
+                raise ValueError("Object %s is a %s, not a %s" % (self.hexsha, typename, self.type))
             self.size = oinfo.size  # type: int
         else:
             super()._set_cache_(attr)
@@ -200,7 +208,7 @@ class Object(LazyMixin):
         """
         return self.repo.odb.stream(self.binsha)
 
-    def stream_data(self, ostream: "OStream") -> "Object":
+    def stream_data(self, ostream: SupportsWrite[bytes]) -> "Object":
         """Write our data directly to the given output stream.
 
         :param ostream:
