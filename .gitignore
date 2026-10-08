@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+.venv/
+venv/
+env/
+
+# SQLite databases
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE and OS
+.DS_Store
+.idea/
+.vscode/
+
+# Generated outputs
+backend/outputs/reports/*
+backend/outputs/visualizations/*
+!backend/outputs/reports/.gitkeep
+!backend/outputs/visualizations/.gitkeep
+
+# Cache
+backend/data/cache/*
+backend/data/historical/*
+!backend/data/cache/.gitkeep
+!backend/data/historical/.gitkeep
