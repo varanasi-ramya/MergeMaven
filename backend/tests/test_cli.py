@@ -1,11 +1,9 @@
-"""End-to-end tests for the fetch CLI using a mocked GitHub client."""
-
 from datetime import datetime
 
 import pytest
 from click.testing import CliRunner
 
-import cli
+from src.cli import cli
 from github_client.pr_fetcher import PRFetcher
 from github_client.api_client import GitHubAPIClient
 from api.db import get_engine, init_db, get_session_factory
@@ -73,7 +71,7 @@ class FakeGithub:
 def isolated_db(monkeypatch, tmp_path):
     """Provide an isolated SQLite database for each test."""
     db_path = tmp_path / "test.db"
-    monkeypatch.setattr("cli.get_engine", lambda: get_engine(db_path))
+    monkeypatch.setattr("src.cli.get_engine", lambda: get_engine(db_path))
     monkeypatch.setattr("github_client.api_client.Github", FakeGithub)
     engine = get_engine(db_path)
     init_db(engine)
@@ -82,7 +80,7 @@ def isolated_db(monkeypatch, tmp_path):
 
 def test_fetch_command_stores_prs(isolated_db):
     runner = CliRunner()
-    result = runner.invoke(cli.cli, ["fetch", "--repo", "https://github.com/psf/requests"])
+    result = runner.invoke(cli, ["fetch", "--repo", "https://github.com/psf/requests"])
     assert result.exit_code == 0, result.output
     assert "Fetched 2 open PR(s)" in result.output
     assert "PR data stored in database." in result.output
@@ -106,10 +104,11 @@ def test_fetch_command_stores_prs(isolated_db):
 def test_list_command_shows_prs(isolated_db):
     # First populate via fetch
     runner = CliRunner()
-    runner.invoke(cli.cli, ["fetch", "--repo", "https://github.com/psf/requests"])
+    runner.invoke(cli, ["fetch", "--repo", "https://github.com/psf/requests"])
 
-    result = runner.invoke(cli.cli, ["list", "--repo", "https://github.com/psf/requests"])
+    result = runner.invoke(cli, ["list"])
     assert result.exit_code == 0, result.output
+    assert "Repository: https://github.com/psf/requests" in result.output
     assert "PR #1" in result.output
     assert "PR #2" in result.output
     assert "alice" in result.output
@@ -118,7 +117,7 @@ def test_list_command_shows_prs(isolated_db):
 
 def test_list_command_no_data(isolated_db, tmp_path):
     runner = CliRunner()
-    # Use a repo that has never been fetched
-    result = runner.invoke(cli.cli, ["list", "--repo", "https://github.com/totally/empty"])
+    result = runner.invoke(cli, ["list"])
     assert result.exit_code == 0
-    assert "No data found" in result.output
+    assert "Repository: https://github.com/psf/requests" not in result.output
+    assert "No data found" not in result.output  # Should be empty output

@@ -84,3 +84,11 @@ Six-week plan covering GitHub integration, feature extraction, historical data c
 ## Resume Value
 
 Demonstrates GitHub API integration, Bayesian modeling, feature engineering, git internals, planning algorithms, full-stack development, interactive visualization, data collection, and tool building.
+
+## Current Status
+
+**Week 1-5 Complete:** GitHub PR fetcher, SQLite schema, CLI (fetch/list/order/predict/report/build/verify/dataset), feature extraction, historical data collection, Bayesian model training and inference.
+
+**Week 6 (Frontend):** React frontend with interactive conflict graph, what-if simulator, and file drill-down.
+
+All 50 tests passing.
