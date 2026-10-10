@@ -7,14 +7,15 @@ interface LogoProps {
 
 /**
  * MergeMaven logo — black background, white icon, rounded corners.
- * Used both on the landing screen and in the dashboard header.
+ * The image is centered and cropped from its center using object-center.
  */
 export function Logo({ size = 52, className = '' }: LogoProps) {
   return (
     <img
       src="/logo-icon.png"
       alt="MergeMaven"
-      className={`shrink-0 rounded-xl object-cover ${className}`}
+      // Center the image horizontally and crop from its center
+      className={`mx-auto block rounded-xl object-cover object-center ${className}`}
       style={{ width: size, height: size }}
     />
   )
