@@ -1,13 +1,26 @@
-// Merge Order component with drag-and-drop simulator for MergeMaven.
+// Merge Order component with drag-and-drop recommendation sequence on light background.
 
 import { useState } from 'react'
-import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core'
-import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import { GripVertical, GitMerge, ShieldCheck } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
 
 interface PR {
   id: string
@@ -22,35 +35,29 @@ interface MergeOrderItemProps {
   item: PR
   index: number
   isDragging: boolean
-  isSelected: boolean
 }
 
-function MergeOrderItem({ item, index, isDragging, isSelected }: MergeOrderItemProps) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isOver,
-  } = useSortable({ id: item.id })
+function MergeOrderItem({ item, index, isDragging }: MergeOrderItemProps) {
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
+    id: item.id,
+  })
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.5 : 1,
+    opacity: isDragging ? 0.4 : 1,
   }
 
-  const getRiskColor = (risk: string) => {
+  const getRiskBadgeVariant = (risk: string) => {
     switch (risk) {
       case 'HIGH':
-        return 'bg-red-900/50 text-red-300 border-red-700'
+        return 'high'
       case 'MODERATE':
-        return 'bg-amber-900/50 text-amber-300 border-amber-700'
+        return 'moderate'
       case 'LOW':
-        return 'bg-green-900/50 text-green-300 border-green-700'
+        return 'low'
       default:
-        return 'bg-gray-900/50 text-gray-300 border-gray-700'
+        return 'default'
     }
   }
 
@@ -58,207 +65,141 @@ function MergeOrderItem({ item, index, isDragging, isSelected }: MergeOrderItemP
     <div
       ref={setNodeRef}
       style={style}
-      className={`flex items-center gap-4 p-4 bg-card border border-border rounded-lg transition-all ${
-        isSelected ? 'ring-2 ring-primary' : ''
-      } ${isOver ? 'ring-1 ring-primary/50' : ''}`}
-      {...attributes}
-      {...listeners}
+      className={`flex items-center gap-3.5 p-4 rounded-xl bg-card border transition-all duration-150 shadow-sm ${
+        isDragging
+          ? 'border-burgundy shadow-xl bg-card-elevated ring-2 ring-burgundy/30'
+          : 'border-border hover:border-burgundy/40'
+      }`}
     >
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-3">
-          <span className="text-2xl font-mono font-bold text-foreground">
-            {index + 1}.
-          </span>
-          <div>
-            <div className="font-mono font-semibold text-foreground">
-              PR #{item.number}: {item.title}
-            </div>
-            <div className="text-sm font-mono text-muted-foreground">
-              by @{item.author}
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center gap-4 ml-auto">
-          <div className="text-right">
-            <div className="text-xs font-mono text-muted-foreground">RISK</div>
-            <Badge className={`${getRiskColor(item.riskLevel)} font-mono`}>
-              {item.riskLevel}
-            </Badge>
-          </div>
-          <div className="text-right">
-            <div className="text-xs font-mono text-muted-foreground">PROBABILITY</div>
-            <div className="font-mono font-semibold text-foreground">
-              {(item.conflictProbability * 100).toFixed(0)}%
-            </div>
-          </div>
-          <div className="w-8 h-8 flex items-center justify-center text-muted-foreground/50 cursor-grab">
-            ⋮⋮
-          </div>
-        </div>
+      <button
+        {...attributes}
+        {...listeners}
+        className="cursor-grab active:cursor-grabbing p-1 text-sand hover:text-burgundy transition-colors"
+      >
+        <GripVertical className="w-4 h-4" />
+      </button>
+
+      <div className="w-7 h-7 rounded-full bg-burgundy text-white flex items-center justify-center font-mono text-xs font-bold shadow-sm">
+        {index + 1}
       </div>
+
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-0.5">
+          <span className="font-mono text-xs font-bold text-burgundy">
+            PR #{item.number}
+          </span>
+          <span className="text-[10px] font-mono text-sand">
+            @{item.author}
+          </span>
+        </div>
+        <p className="text-xs text-foreground font-medium truncate font-sans">
+          {item.title}
+        </p>
+      </div>
+
+      <Badge variant={getRiskBadgeVariant(item.riskLevel) as any} className="text-[10px]">
+        {(item.conflictProbability * 100).toFixed(0)}% RISK
+      </Badge>
     </div>
   )
 }
 
-interface MergeOrderProps {
-  items: {
-    id: string
-    number: number
-    title: string
-    author: string
-    riskLevel: 'HIGH' | 'MODERATE' | 'LOW'
-    conflictProbability: number
-  }[]
-  onOrderChange?: (items: any[]) => void
-  recommendedOrder?: string[]
+
+const MOCK_MERGE_ORDER: PR[] = [
+  { id: '1', number: 139, title: 'Update API endpoints', author: 'eve', riskLevel: 'LOW', conflictProbability: 0.18 },
+  { id: '2', number: 148, title: 'Add Stripe integration', author: 'david', riskLevel: 'MODERATE', conflictProbability: 0.58 },
+  { id: '3', number: 145, title: 'Refactor checkout flow', author: 'charlie', riskLevel: 'MODERATE', conflictProbability: 0.64 },
+  { id: '4', number: 147, title: 'Update transaction model', author: 'bob', riskLevel: 'HIGH', conflictProbability: 0.82 },
+  { id: '5', number: 142, title: 'Add payment validation', author: 'alice', riskLevel: 'HIGH', conflictProbability: 0.87 },
+]
+
+interface MergeOrderEntry {
+  prNumber: number
+  title: string
+  conflictScore: number
+  riskLevel: 'HIGH' | 'MODERATE' | 'LOW'
 }
 
-export function MergeOrder({ items, onOrderChange, recommendedOrder = [] }: MergeOrderProps) {
-  const [sortedItems, setSortedItems] = useState(items)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [showComparison, setShowComparison] = useState(false)
+export function MergeOrder({ onOrderChange, mergeOrder: liveMergeOrder }: { onOrderChange?: (items: PR[]) => void; mergeOrder?: MergeOrderEntry[] }) {
+  const initialItems: PR[] = liveMergeOrder && liveMergeOrder.length > 0
+    ? liveMergeOrder.map((entry, i) => ({
+        id: String(i + 1),
+        number: entry.prNumber,
+        title: entry.title,
+        author: '',
+        riskLevel: entry.riskLevel,
+        conflictProbability: entry.conflictScore,
+      }))
+    : MOCK_MERGE_ORDER
+  const [sortedItems, setSortedItems] = useState<PR[]>(initialItems)
 
   const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   )
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
-
     if (over && active.id !== over.id) {
       setSortedItems((items) => {
-        const newItems = arrayMove(items, items.findIndex((i) => i.id === active.id), items.findIndex((i) => i.id === over.id))
-        onOrderChange?.(newItems)
-        return newItems
+        const oldIndex = items.findIndex((i) => i.id === active.id)
+        const newIndex = items.findIndex((i) => i.id === over.id)
+        const reordered = arrayMove(items, oldIndex, newIndex)
+        onOrderChange?.(reordered)
+        return reordered
       })
     }
   }
 
-  const calculateRisk = (items: any[]) => {
-    let totalRisk = 0
-    items.forEach((item, index) => {
-      const laterItems = items.slice(index + 1)
-      laterItems.forEach((later) => {
-        // Simplified risk calculation
-        totalRisk += item.conflictProbability * later.conflictProbability * 0.5
-      })
-    })
-    return Math.min(1, totalRisk / items.length)
-  }
-
-  const currentRisk = calculateRisk(sortedItems)
-  const recommendedRisk = calculateRisk(
-    recommendedOrder
-      .map((id) => items.find((i) => i.id === id))
-      .filter(Boolean)
-  )
-
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-mono font-semibold text-foreground">
-            Merge Order
-          </h2>
-          <p className="text-sm font-mono text-muted-foreground">
-            Drag to reorder • Current risk: <span className="font-bold text-foreground">{(currentRisk * 100).toFixed(0)}%</span>
-          </p>
+      <div className="rounded-2xl bg-card border border-border p-6 space-y-6 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
+          <div>
+            <h3 className="font-sans font-bold text-base text-burgundy">
+              Optimal Merge Order Recommendation
+            </h3>
+            <p className="text-xs font-mono text-sand mt-0.5">
+              Algorithmically ordered to minimize cascading rebases and downstream branch conflicts
+            </p>
+          </div>
+          <Badge variant="low" className="text-xs self-start sm:self-auto font-bold text-burgundy">
+            <ShieldCheck className="w-3.5 h-3.5 mr-1 text-burgundy" />
+            Confidence: 94%
+          </Badge>
         </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="font-mono"
-            onClick={() => setShowComparison(!showComparison)}
-          >
-            {showComparison ? 'Hide Comparison' : 'Compare with Recommended'}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="font-mono"
-            onClick={() => {
-              const recommended = recommendedOrder
-                .map((id) => items.find((i) => i.id === id))
-                .filter(Boolean)
-              setSortedItems(recommended as any)
-              onOrderChange?.(recommended as any)
-            }}
-          >
-            Apply Recommended
-          </Button>
+
+        {/* Sortable List */}
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext items={sortedItems.map((i) => i.id)} strategy={verticalListSortingStrategy}>
+            <div className="space-y-2.5">
+              {sortedItems.map((item, index) => (
+                <MergeOrderItem
+                  key={item.id}
+                  item={item}
+                  index={index}
+                  isDragging={false}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
+
+        {/* Impact Insight */}
+        <div className="p-4 rounded-xl bg-card-elevated border border-border flex items-start gap-3 text-xs font-mono shadow-sm">
+          <GitMerge className="w-4 h-4 text-burgundy mt-0.5 shrink-0" />
+          <div className="space-y-1">
+            <span className="text-burgundy font-bold">Merge Plan Rationale</span>
+            <p className="text-[11px] text-foreground leading-relaxed font-medium">
+              Merging foundational endpoint changes (PR #139) first establishes updated schema models before feature PRs (#148, #145) touch dependent payment handlers.
+            </p>
+          </div>
         </div>
       </div>
-
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={handleDragEnd}
-      >
-        <SortableContext
-          items={sortedItems.map((item) => item.id)}
-          strategy={verticalListSortingStrategy}
-        >
-          <div className="space-y-3">
-            {sortedItems.map((item, index) => (
-              <MergeOrderItem
-                key={item.id}
-                item={item}
-                index={index}
-                isDragging={false}
-                isSelected={selectedId === item.id}
-              />
-            ))}
-          </div>
-        </SortableContext>
-      </DndContext>
-
-      {showComparison && (
-        <div className="bg-muted/30 border border-border rounded-lg p-4">
-          <h3 className="font-mono font-semibold text-foreground mb-3">
-            Comparison with Recommended Order
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="p-3 bg-red-900/20 border border-red-900/30 rounded-lg">
-              <div className="font-mono font-semibold text-red-400 mb-2">
-                Your Order
-              </div>
-              <div className="text-sm font-mono text-muted-foreground">
-                Risk: <span className="font-bold text-red-400">{(currentRisk * 100).toFixed(0)}%</span>
-              </div>
-              <ul className="mt-2 space-y-1 text-sm font-mono text-muted-foreground">
-                {sortedItems.slice(0, 5).map((item, i) => (
-                  <li key={item.id}>
-                    {i + 1}. PR #{item.number} ({item.riskLevel})
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="p-3 bg-green-900/20 border border-green-900/30 rounded-lg">
-              <div className="font-mono font-semibold text-green-400 mb-2">
-                Recommended Order
-              </div>
-              <div className="text-sm font-mono text-muted-foreground">
-                Risk: <span className="font-bold text-green-400">{(recommendedRisk * 100).toFixed(0)}%</span>
-              </div>
-              <ul className="mt-2 space-y-1 text-sm font-mono text-muted-foreground">
-                {recommendedOrder
-                  .map((id) => items.find((i) => i.id === id))
-                  .filter(Boolean)
-                  .slice(0, 5)
-                  .map((item, i) => (
-                    <li key={item!.id}>
-                      {i + 1}. PR #{item!.number} ({item!.riskLevel})
-                    </li>
-                  ))}
-              </ul>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

@@ -4,73 +4,121 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* Palette Tokens - Light Cream/Beige Base with Popping Maroon & Brown */
+    --burgundy-primary: #561C24;
+    --burgundy-light: #6D2932;
+    --brown-accent: #7D4F42;
+    --brown-deep: #2A1714;
+    --brown-surface: #EFE4D8;
+    --brown-elevated: #E5D5C5;
+    --sand-muted: #6E534C;
+    --beige-warm: #C7B7A3;
+    --cream-light: #F4EBE1;
 
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
- 
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
- 
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
- 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
- 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
- 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
- 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    /* Neutrals */
+    --background: #F3EAE0;
+    --foreground: #221210;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
- 
-    --radius: 0.5rem;
-  }
- 
-  .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
- 
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
- 
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
- 
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
- 
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
- 
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
- 
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
- 
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
- 
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
+    --card: #FCF7F2;
+    --card-foreground: #221210;
+
+    --card-elevated: #EDE0D3;
+    --card-elevated-foreground: #221210;
+
+    --popover: #FCF7F2;
+    --popover-foreground: #221210;
+
+    --primary: #561C24;
+    --primary-foreground: #FAF3EC;
+
+    --secondary: #EADCD0;
+    --secondary-foreground: #221210;
+
+    --muted: #EADCD0;
+    --muted-foreground: #6B4F47;
+
+    --accent: #6D2932;
+    --accent-foreground: #FAF3EC;
+
+    --destructive: #561C24;
+    --destructive-foreground: #FAF3EC;
+
+    --border: rgba(86, 28, 36, 0.12);
+    --border-hover: rgba(86, 28, 36, 0.28);
+    --input: rgba(86, 28, 36, 0.14);
+    --ring: #561C24;
+
+    --radius: 1rem; /* 16px for cards */
+    --radius-sm: 0.625rem; /* 10px for buttons/pills */
   }
 }
- 
+
 @layer base {
   * {
-    @apply border-border;
+    border-color: var(--border);
   }
+  
+  html {
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: var(--background);
+    color: var(--foreground);
+  }
+
   body {
-    @apply bg-background text-foreground;
+    background-color: var(--background);
+    color: var(--foreground);
+    min-height: 100vh;
   }
+
+  h1, h2, h3, h4, h5, h6 {
+    letter-spacing: -0.025em;
+    color: var(--foreground);
+  }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #F3EAE0;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(86, 28, 36, 0.22);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(86, 28, 36, 0.45);
+}
+
+/* Card Glow / Elevation Effect */
+.card-hover-glow {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.card-hover-glow:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 30px -6px rgba(86, 28, 36, 0.15), 0 4px 10px rgba(109, 41, 50, 0.08);
+  border-color: rgba(86, 28, 36, 0.26);
+}
+
+/* Shimmer animation */
+@keyframes subtle-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    #FAF3EC 25%,
+    #EFE4D8 50%,
+    #FAF3EC 75%
+  );
+  background-size: 200% 100%;
+  animation: subtle-shimmer 2s infinite ease-in-out;
 }

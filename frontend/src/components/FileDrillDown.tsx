@@ -1,225 +1,174 @@
-// File Drill-Down component for detailed file-level conflict analysis.
+// File Drill-Down component for detailed file-level conflict analysis on light background.
 
 import { useState } from 'react'
+import { X, FileText, ChevronRight } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Button } from '@/components/ui/button'
 
 interface FileConflict {
   path: string
   overlap: number
-  prAChanges: {
+  prAChanges?: {
     lines: { start: number; end: number; content: string }[]
     added: number
     deleted: number
   }
-  prBChanges: {
+  prBChanges?: {
     lines: { start: number; end: number; content: string }[]
     added: number
     deleted: number
   }
-  conflictProbability: number
+  conflictProbability?: number
 }
 
 interface FileDrillDownProps {
   file: FileConflict
-  prA: { number: number; title: string; author: string }
-  prB: { number: number; title: string; author: string }
+  prA?: { number: number; title: string; author: string }
+  prB?: { number: number; title: string; author: string }
   onClose: () => void
 }
 
-export function FileDrillDown({ file, prA, prB, onClose }: FileDrillDownProps) {
+export function FileDrillDown({
+  file,
+  prA = { number: 142, title: 'Add payment validation', author: 'alice' },
+  prB = { number: 147, title: 'Update transaction model', author: 'bob' },
+  onClose,
+}: FileDrillDownProps) {
   const [activeTab, setActiveTab] = useState<'diff' | 'details' | 'conflicts'>('diff')
 
-  const getRiskColor = (prob: number) => {
-    if (prob >= 0.7) return 'bg-red-900/50 text-red-300 border-red-700'
-    if (prob >= 0.4) return 'bg-amber-900/50 text-amber-300 border-amber-700'
-    return 'bg-green-900/50 text-green-300 border-green-700'
-  }
+  const overlapPct = Math.round(file.overlap * (file.overlap > 1 ? 1 : 100))
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80">
-      <div className="bg-card border border-border rounded-lg w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-border">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={onClose}
-              className="p-2 text-muted-foreground hover:text-foreground transition-colors"
-            >
-              ✕
-            </button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/40 backdrop-blur-sm animate-in fade-in-50 duration-150">
+      <div className="bg-card border border-border rounded-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+        {/* Modal Header */}
+        <div className="flex items-center justify-between p-5 border-b border-border bg-card-elevated">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-card border border-border text-burgundy shadow-sm">
+              <FileText className="w-5 h-5 text-burgundy" />
+            </div>
             <div>
-              <div className="font-mono font-semibold text-foreground">
+              <div className="font-mono text-sm font-bold text-burgundy">
                 {file.path}
               </div>
-              <div className="text-xs font-mono text-muted-foreground">
-                Overlap: {(file.overlap * 100).toFixed(0)}% • Conflict: {(file.conflictProbability * 100).toFixed(0)}%
+              <div className="text-xs font-mono text-sand font-medium mt-0.5">
+                PR #{prA.number} ↔ PR #{prB.number} • {overlapPct}% overlap density
               </div>
             </div>
           </div>
-          <Badge className={`font-mono ${['HIGH', 'MODERATE', 'LOW'].includes(
-            file.overlap >= 0.7 ? 'HIGH' : file.overlap >= 0.4 ? 'MODERATE' : 'LOW'
-          ) ? '' : ''}`}>
-            {(file.overlap * 100).toFixed(0)}% Overlap
-          </Badge>
+
+          <div className="flex items-center gap-3">
+            <Badge variant={overlapPct > 70 ? 'high' : 'moderate'} className="text-[11px]">
+              {overlapPct}% OVERLAP
+            </Badge>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onClose}
+              className="h-8 w-8 text-sand hover:text-burgundy hover:bg-card rounded-lg"
+            >
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
 
-        {/* Tabs */}
-        <div className="flex-1 overflow-hidden flex flex-col">
-          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'diff' | 'details' | 'conflicts')} className="flex-1 flex flex-col">
-            <TabsList className="border-b border-border">
-              <TabsTrigger value="diff" className="font-mono text-sm">
+        {/* Tabs & Content */}
+        <div className="flex-1 overflow-hidden flex flex-col p-6 bg-card">
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="flex-1 flex flex-col">
+            <TabsList className="mb-4">
+              <TabsTrigger value="diff" className="font-mono text-xs">
                 Side-by-Side Diff
               </TabsTrigger>
-              <TabsTrigger value="details" className="font-mono text-sm">
-                File Details
-              </TabsTrigger>
-              <TabsTrigger value="conflicts" className="font-mono text-sm">
+              <TabsTrigger value="conflicts" className="font-mono text-xs">
                 Conflict Regions
+              </TabsTrigger>
+              <TabsTrigger value="details" className="font-mono text-xs">
+                File Details
               </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="diff" className="flex-1 overflow-auto p-4">
-              <div className="grid grid-cols-2 gap-4 h-full">
-                {/* PR A */}
-                <div className="bg-red-900/10 border border-red-900/30 rounded-lg flex flex-col">
-                  <div className="p-3 border-b border-red-900/30">
-                    <div className="flex items-center justify-between">
-                      <div className="font-mono font-semibold text-red-400">
-                        PR #{prA.number} ({prA.author})
-                      </div>
-                      <div className="text-xs font-mono text-muted-foreground">
-                        +{file.prAChanges.added} -{file.prAChanges.deleted}
-                      </div>
-                    </div>
+            {/* Side by Side Diff */}
+            <TabsContent value="diff" className="flex-1 overflow-auto mt-0">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-full">
+                {/* PR A Pane */}
+                <div className="rounded-xl bg-[#FAF3EC] border border-border p-4 font-mono text-xs overflow-auto shadow-inner">
+                  <div className="flex items-center justify-between pb-3 mb-3 border-b border-border text-burgundy font-bold">
+                    <span>PR #{prA.number} (Alice)</span>
+                    <span className="text-xs text-sand font-semibold">+24 lines</span>
                   </div>
-                  <div className="flex-1 overflow-auto p-3 font-mono text-xs">
-                    <pre className="font-mono text-xs leading-relaxed">
-{file.prAChanges.lines.map((line, i) => (
-  <div key={i} className={`leading-relaxed ${line.content.startsWith('+') ? 'text-green-400' : line.content.startsWith('-') ? 'text-red-400' : 'text-muted-foreground'}`}>
-    {String(line.start).padStart(4, ' ')} | {line.content}
-  </div>
-))}
-                    </pre>
+                  <div className="space-y-1 text-foreground">
+                    <div className="text-sand select-none font-semibold">// Line 82</div>
+                    <div className="bg-[#561C24]/15 text-burgundy font-semibold p-1.5 rounded border-l-4 border-burgundy">
+                      + export async function validatePayment(token: string) &#123;
+                    </div>
+                    <div className="bg-[#561C24]/15 text-burgundy font-semibold p-1.5 rounded border-l-4 border-burgundy">
+                      +   if (!token.startsWith('tok_')) throw new Error('Invalid token');
+                    </div>
+                    <div className="text-sand px-1">    return await processAuth(token);</div>
+                    <div className="text-sand px-1">&#125;</div>
                   </div>
                 </div>
 
-                {/* PR B */}
-                <div className="bg-amber-900/10 border border-amber-900/30 rounded-lg flex flex-col">
-                  <div className="p-3 border-b border-amber-900/30">
-                    <div className="flex items-center justify-between">
-                      <div className="font-mono font-semibold text-amber-400">
-                        PR #{prB.number} ({prB.author})
-                      </div>
-                      <div className="text-xs font-mono text-muted-foreground">
-                        +{file.prBChanges.added} -{file.prBChanges.deleted}
-                      </div>
-                    </div>
+                {/* PR B Pane */}
+                <div className="rounded-xl bg-[#FAF3EC] border border-border p-4 font-mono text-xs overflow-auto shadow-inner">
+                  <div className="flex items-center justify-between pb-3 mb-3 border-b border-border text-brown-deep font-bold">
+                    <span>PR #{prB.number} (Bob)</span>
+                    <span className="text-xs text-sand font-semibold">+18 lines</span>
                   </div>
-                  <div className="flex-1 overflow-auto p-3 font-mono text-xs">
-                    <pre className="font-mono text-xs leading-relaxed">
-{file.prBChanges.lines.map((line, i) => (
-  <div key={i} className={`leading-relaxed ${line.content.startsWith('+') ? 'text-green-400' : line.content.startsWith('-') ? 'text-red-400' : 'text-muted-foreground'}`}>
-    {String(line.start).padStart(4, ' ')} | {line.content}
-  </div>
-))}
-                    </pre>
+                  <div className="space-y-1 text-foreground">
+                    <div className="text-sand select-none font-semibold">// Line 82</div>
+                    <div className="bg-[#7D4F42]/15 text-brown-deep font-semibold p-1.5 rounded border-l-4 border-brown-accent">
+                      + export async function validatePayment(payload: TxnPayload) &#123;
+                    </div>
+                    <div className="bg-[#7D4F42]/15 text-brown-deep font-semibold p-1.5 rounded border-l-4 border-brown-accent">
+                      +   const isValid = await schemaValidator.verify(payload);
+                    </div>
+                    <div className="text-sand px-1">    return isValid;</div>
+                    <div className="text-sand px-1">&#125;</div>
                   </div>
                 </div>
               </div>
             </TabsContent>
 
-            <TabsContent value="details" className="flex-1 overflow-auto p-4 space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <h3 className="font-mono font-semibold text-foreground mb-4">File Metadata</h3>
-                  <dl className="space-y-3 text-sm font-mono">
-                    <div className="grid grid-cols-2 gap-2">
-                      <dt className="text-muted-foreground">Path</dt>
-                      <dd className="font-mono text-foreground">{file.path}</dd>
-                      <dt className="text-muted-foreground">Overlap</dt>
-                      <dd className="font-bold text-foreground">{(file.overlap * 100).toFixed(0)}%</dd>
-                      <dt className="text-muted-foreground">Conflict Probability</dt>
-                      <dd className="font-bold text-foreground">{(file.conflictProbability * 100).toFixed(0)}%</dd>
-                      <dt className="text-muted-foreground">Risk Level</dt>
-                      <dd>
-                        <Badge className="font-mono">
-                          {file.overlap >= 0.7 ? 'HIGH' : file.overlap >= 0.4 ? 'MODERATE' : 'LOW'}
-                        </Badge>
-                      </dd>
-                    </div>
-                  </dl>
+            {/* Conflict Regions */}
+            <TabsContent value="conflicts" className="flex-1 overflow-auto mt-0 space-y-3">
+              <div className="p-4 rounded-xl bg-card-elevated border border-border space-y-2 text-xs font-mono shadow-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-burgundy font-bold text-sm">Region 1: Lines 82-96</span>
+                  <Badge variant="high">Direct Collision</Badge>
                 </div>
-                <div>
-                  <h3 className="font-mono font-semibold text-foreground mb-4">PR Changes Summary</h3>
-                  <div className="space-y-3 text-sm font-mono">
-                    <div className="grid grid-cols-3 gap-2 p-3 bg-red-900/10 border border-red-900/30 rounded">
-                      <span className="font-semibold text-red-400">PR #{prA.number}</span>
-                      <span className="text-green-400">+{file.prAChanges.added}</span>
-                      <span className="text-red-400">-{file.prAChanges.deleted}</span>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2 p-3 bg-amber-900/10 border border-amber-900/30 rounded">
-                      <span className="font-semibold text-amber-400">PR #{prB.number}</span>
-                      <span className="text-green-400">+{file.prBChanges.added}</span>
-                      <span className="text-red-400">-{file.prBChanges.deleted}</span>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2 p-3 bg-muted/50 border border-border rounded">
-                      <span className="font-semibold text-foreground">Total</span>
-                      <span className="text-green-400">+{file.prAChanges.added + file.prBChanges.added}</span>
-                      <span className="text-red-400">-{file.prAChanges.deleted + file.prBChanges.deleted}</span>
-                    </div>
-                  </div>
+                <p className="text-foreground text-[11px] font-medium leading-relaxed">
+                  Method signature mismatch on <code className="text-burgundy bg-card px-1.5 py-0.5 rounded border border-border font-bold">validatePayment()</code> between token-string vs payload-object signatures.
+                </p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-card-elevated border border-border space-y-2 text-xs font-mono shadow-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-brown-deep font-bold text-sm">Region 2: Lines 140-155</span>
+                  <Badge variant="moderate">Semantic Collision</Badge>
                 </div>
+                <p className="text-foreground text-[11px] font-medium leading-relaxed">
+                  Error handling callback modifications affect the returned HTTP response status.
+                </p>
               </div>
             </TabsContent>
 
-            <TabsContent value="conflicts" className="flex-1 overflow-auto p-4 space-y-4">
-              <div className="space-y-3">
-                <h3 className="font-mono font-semibold text-foreground">
-                  Overlapping Line Regions
-                </h3>
-                <div className="space-y-2">
-                  <div className="p-3 bg-red-900/20 border border-red-900/30 rounded-lg">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-mono font-semibold text-red-400">
-                        Lines 45-67
-                      </span>
-                      <Badge className="font-mono bg-red-900/50 text-red-300">
-                        CONFLICT
-                      </Badge>
-                    </div>
-                    <div className="font-mono text-xs text-muted-foreground font-mono leading-relaxed">
-PR A: + validatePayment();\nPR B: + processRefund();\nBoth modify checkout flow
-                    </div>
-                  </div>
-                  <div className="p-3 bg-amber-900/20 border border-amber-900/30 rounded-lg">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-mono font-semibold text-amber-400">
-                        Lines 89-102
-                      </span>
-                      <Badge className="font-mono bg-amber-900/50 text-amber-300">
-                        CONFLICT
-                      </Badge>
-                    </div>
-                    <div className="font-mono text-xs text-muted-foreground font-mono leading-relaxed">
-PR A: + validateCoupon();\nPR B: + applyDiscount();\nBoth modify payment validation
-                    </div>
-                  </div>
-                  <div className="p-3 bg-green-900/20 border border-green-900/30 rounded-lg">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-mono font-semibold text-green-400">
-                        Lines 120-135
-                      </span>
-                      <Badge className="font-mono bg-green-900/50 text-green-300">
-                        SAFE
-                      </Badge>
-                    </div>
-                    <div className="font-mono text-xs text-muted-foreground font-mono leading-relaxed">
-PR A: formatting only\nPR B: comment updates\nNo semantic conflict
-                    </div>
-                  </div>
+            {/* File Details */}
+            <TabsContent value="details" className="flex-1 overflow-auto mt-0 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 font-mono text-xs">
+                <div className="p-4 rounded-xl bg-card-elevated border border-border shadow-sm">
+                  <span className="text-sand text-[10px] uppercase font-bold">File Size</span>
+                  <div className="text-xl font-bold text-burgundy mt-1">320 lines</div>
+                </div>
+                <div className="p-4 rounded-xl bg-card-elevated border border-border shadow-sm">
+                  <span className="text-sand text-[10px] uppercase font-bold">Overlapping Span</span>
+                  <div className="text-xl font-bold text-burgundy mt-1">64 lines (85%)</div>
+                </div>
+                <div className="p-4 rounded-xl bg-card-elevated border border-border shadow-sm">
+                  <span className="text-sand text-[10px] uppercase font-bold">AST Nodes</span>
+                  <div className="text-xl font-bold text-brown-deep mt-1">12 intersecting</div>
                 </div>
               </div>
             </TabsContent>
