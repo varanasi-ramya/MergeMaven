@@ -1,4 +1,4 @@
-"""Merge Order component with drag-and-drop simulator for MergeMaven."""
+// Merge Order component with drag-and-drop simulator for MergeMaven.
 
 import { useState } from 'react'
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core'
@@ -96,8 +96,8 @@ function MergeOrderItem({ item, index, isDragging, isSelected }: MergeOrderItemP
           </div>
         </div>
       </div>
-    )
-  }
+    </div>
+  )
 }
 
 interface MergeOrderProps {

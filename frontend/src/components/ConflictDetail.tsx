@@ -1,4 +1,4 @@
-"""Conflict detail component showing comprehensive analysis of a PR conflict."""
+// Conflict detail component showing comprehensive analysis of a PR conflict.
 
 import { useState } from 'react'
 
@@ -117,8 +117,8 @@ export function ConflictDetail({ conflict }: ConflictDetailProps) {
               onClick={() => setActiveTab(tab as any)}
               className={`pb-4 px-1 border-b-2 font-mono text-sm transition-colors ${activeTab === tab
                 ? 'border-primary text-foreground'
-                : 'border-transparent text-muted-foreground hover:text-foreground'}
-              }
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}
             >
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
             </button>
@@ -231,7 +231,7 @@ export function ConflictDetail({ conflict }: ConflictDetailProps) {
                         Impact Level
                       </div>
                       <div
-                        className={`font-mono font-semibold ${file.overlap > 80 ? 'text-red-400' : file.overlap > 60 ? 'text-amber-400' : 'text-green-400'}
+                        className={`font-mono font-semibold ${file.overlap > 80 ? 'text-red-400' : file.overlap > 60 ? 'text-amber-400' : 'text-green-400'}`}
                       >
                         {file.overlap > 80 ? 'HIGH' : file.overlap > 60 ? 'MOD' : 'LOW'}
                       </div>

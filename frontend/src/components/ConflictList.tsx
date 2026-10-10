@@ -1,4 +1,4 @@
-"""Conflict list component displaying PR conflicts with risk assessment."""
+// Conflict list component displaying PR conflicts with risk assessment.
 
 import { useState } from 'react'
 
@@ -63,7 +63,7 @@ export function ConflictList({ conflicts, onSelectConflict }: ConflictListProps)
       {conflicts.map((conflict) => (
         <Card
           key={conflict.id}
-          className={`cursor-pointer transition-all hover:scale-[1.02] ${getRiskColor(conflict.riskLevel)} border"}
+          className={`cursor-pointer transition-all hover:scale-[1.02] ${getRiskColor(conflict.riskLevel)} border`}
           onClick={() => onSelectConflict?.(conflict)}
         >
           <CardHeader className="pb-3">
@@ -86,7 +86,7 @@ export function ConflictList({ conflicts, onSelectConflict }: ConflictListProps)
               <div>
                 <div className="text-xs font-mono text-muted-foreground mb-1">PROBABILITY</div>
                 <div className="text-lg font-mono font-bold text-foreground">
-                  {conflict.conflictProbability > 0.99 ? '>99%' : `${(conflict.conflictProbability * 100).toFixed(0)}%'}
+                  {conflict.conflictProbability > 0.99 ? '>99%' : `${(conflict.conflictProbability * 100).toFixed(0)}%`}
                 </div>
               </div>
               <div>

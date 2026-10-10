@@ -1,4 +1,4 @@
-"""Conflict Heatmap component for PR vs PR conflict probability matrix."""
+// Conflict Heatmap component for PR vs PR conflict probability matrix.
 
 import { useState } from 'react'
 
@@ -89,7 +89,7 @@ export function ConflictHeatmap({ data, onCellClick }: HeatmapProps) {
                             {getRiskLabel(value)}
                           </span>
                         )}
-                      </span>
+                      </div>
                     </td>
                   ))}
                 </tr>

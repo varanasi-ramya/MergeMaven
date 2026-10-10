@@ -1,4 +1,4 @@
-"""Analysis Configuration component for repository settings."""
+// Analysis Configuration component for repository settings.
 
 import { useState } from 'react'
 

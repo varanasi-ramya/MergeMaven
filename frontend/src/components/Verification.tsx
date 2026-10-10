@@ -1,4 +1,4 @@
-"""Verification component showing git merge-tree simulation results."""
+// Verification component showing git merge-tree simulation results.
 
 import { useState } from 'react'
 
@@ -72,7 +72,7 @@ export function Verification({ result, onClose }: VerificationProps) {
         </div>
 
         <div className="flex-1 overflow-hidden flex flex-col">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'summary' | 'simulation' | 'prediction')} className="flex-1 flex flex-col">
             <TabsList className="border-b border-border">
               <TabsTrigger value="summary" className="font-mono text-sm">
                 Summary

@@ -1,4 +1,4 @@
-"""Interactive Conflict Graph using D3.js for MergeMaven."""
+// Interactive Conflict Graph using D3.js for MergeMaven.
 
 import { useEffect, useRef, useState } from 'react'
 

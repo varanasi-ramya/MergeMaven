@@ -1,4 +1,4 @@
-"""What-If Simulator component for MergeMaven merge order experimentation."""
+// What-If Simulator component for MergeMaven merge order experimentation.
 
 import { useState } from 'react'
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core'
@@ -126,7 +126,7 @@ export function WhatIfSimulator({ availablePRs, initialQueue = [], onQueueChange
         totalRisk += item.conflictProbability * later.conflictProbability * 0.3
         pairCount++
       })
-    }
+    })
     return pairCount > 0 ? totalRisk / pairCount : 0
   }
 
@@ -136,16 +136,18 @@ export function WhatIfSimulator({ availablePRs, initialQueue = [], onQueueChange
     const { active, over } = event
 
     if (over && active.id !== over.id) {
+      const activeId = String(active.id)
+      const overId = String(over.id)
       // Determine if dragging within queue or from available to queue
-      const wasInQueue = queue.includes(active.id)
-      const overInQueue = queue.includes(over.id)
+      const wasInQueue = queue.includes(activeId)
+      const overInQueue = queue.includes(overId)
 
       if (wasInQueue && overInQueue) {
         // Reordering within queue
-        setQueue((q) => arrayMove(q, q.indexOf(active.id), q.indexOf(over.id)))
+        setQueue((q) => arrayMove(q, q.indexOf(activeId), q.indexOf(overId)))
       } else if (!wasInQueue && overInQueue) {
         // Moving from available to queue
-        setQueue((q) => arrayMove([...availableItems.map((i) => i.id), ...q], availableItems.findIndex((i) => i.id === active.id), q.indexOf(over.id) + availableItems.length))
+        setQueue((q) => arrayMove([...availableItems.map((i) => i.id), ...q], availableItems.findIndex((i) => i.id === activeId), q.indexOf(overId) + availableItems.length))
       }
     }
   }
@@ -231,7 +233,7 @@ export function WhatIfSimulator({ availablePRs, initialQueue = [], onQueueChange
               <Badge className="font-mono">
                 {queue.length} PRs
               </Badge>
-            </CardTitle>
+            </div>
             <CardDescription className="font-mono">
               Drag to reorder • Predicted risk updates in real-time
             </CardDescription>
@@ -293,7 +295,7 @@ export function WhatIfSimulator({ availablePRs, initialQueue = [], onQueueChange
                           </div>
                         </div>
                       )
-                    )}
+                    })
                   )}
                 </div>
               </SortableContext>

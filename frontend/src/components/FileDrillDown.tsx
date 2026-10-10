@@ -1,4 +1,4 @@
-"""File Drill-Down component for detailed file-level conflict analysis."""
+// File Drill-Down component for detailed file-level conflict analysis.
 
 import { useState } from 'react'
 
@@ -68,7 +68,7 @@ export function FileDrillDown({ file, prA, prB, onClose }: FileDrillDownProps) {
 
         {/* Tabs */}
         <div className="flex-1 overflow-hidden flex flex-col">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'diff' | 'details' | 'conflicts')} className="flex-1 flex flex-col">
             <TabsList className="border-b border-border">
               <TabsTrigger value="diff" className="font-mono text-sm">
                 Side-by-Side Diff
@@ -149,8 +149,8 @@ export function FileDrillDown({ file, prA, prB, onClose }: FileDrillDownProps) {
                           {file.overlap >= 0.7 ? 'HIGH' : file.overlap >= 0.4 ? 'MODERATE' : 'LOW'}
                         </Badge>
                       </dd>
-                    </dl>
-                  </div>
+                    </div>
+                  </dl>
                 </div>
                 <div>
                   <h3 className="font-mono font-semibold text-foreground mb-4">PR Changes Summary</h3>

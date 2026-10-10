@@ -1,4 +1,4 @@
-"""Repository input component for MergeMaven frontend."""
+// Repository input component for MergeMaven frontend.
 
 import { useState } from 'react'
 

@@ -28,3 +28,12 @@ backend/data/cache/*
 backend/data/historical/*
 !backend/data/cache/.gitkeep
 !backend/data/historical/.gitkeep
+
+# Node / Frontend
+node_modules/
+frontend/node_modules/
+frontend/dist/
+backend/src/static/
+.env
+.env.local
+*.log

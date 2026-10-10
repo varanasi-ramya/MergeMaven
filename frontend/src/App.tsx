@@ -1,9 +1,9 @@
-"""Main application component for MergeMaven - Phase 2"""
+// Main application component for MergeMaven - Phase 2
 
 import { useState } from 'react'
 
-import ConflictDetail from './components/ConflictDetail'
-import ConflictList from './components/ConflictList'
+import { ConflictDetail } from './components/ConflictDetail'
+import { ConflictList } from './components/ConflictList'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card'
 
 // Mock data for Phase 2 demonstration
@@ -49,7 +49,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-background font-mono">
       {/* Header */}
-      <header classnabe="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
+      <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div>
@@ -81,7 +81,7 @@ export default function App() {
               <CardContent>
                 <ConflictList
                   conflicts={mockConflicts.filter(c => c.riskLevel === 'HIGH')}
-                  onSelectConflict={setSelectedConflictId}
+                  onSelectConflict={(c) => setSelectedConflictId(c.id)}
                 />
               </CardContent>
             </Card>
@@ -139,7 +139,7 @@ export default function App() {
                 <h2 className="text-xl font-mono font-semibold text-foreground">
                   Conflict Analysis
                 </h2>
-                <p classnabe="text-sm font-mono text-muted-foreground">
+                <p className="text-sm font-mono text-muted-foreground">
                   PR #{selectedConflict?.prA.number} ↔ PR #{selectedConflict?.prB.number}
                 </p>
               </div>
